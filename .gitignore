@@ -2,3 +2,4 @@
 *.pyc
 venv
 staticfiles
+proxy-server/node_modules
