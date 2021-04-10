@@ -12,7 +12,7 @@ There is a public instance available here: [http://editor.fanoutapp.com](http://
 
 ## Usage
 
-Install dependencies and setup database:
+Install dependencies and setup database for editor server:
 
 ```sh
 virtualenv venv
@@ -22,6 +22,12 @@ python manage.py migrate
 ```
 
 Note: default storage is sqlite.
+
+Install dependencies for proxy server:
+
+```sh
+npm install
+```
 
 ### Running with Fanout Cloud
 
@@ -33,10 +39,10 @@ GRIP_URL=https://api.fanout.io/realm/{realm-id}?iss={realm-id}&key=base64:{realm
 
 Be sure to replace `{realm-id}` and `{realm-key}` with the values from the Fanout control panel.
 
-In a separate shell, run ngrok for local tunneling:
+In a separate shell, run proxy server for local tunneling:
 
 ```sh
-ngrok http 8000
+node proxy.js
 ```
 
 In the Fanout control panel, set the ngrok host/port as the Origin Server.
@@ -44,7 +50,7 @@ In the Fanout control panel, set the ngrok host/port as the Origin Server.
 Run a local instance of the project:
 
 ```sh
-python manage.py runserver
+python manage.py runserver 127.0.0.1:8001
 ```
 
 Then open up two browser windows to your Fanout Cloud domain (e.g. https://{realm-id}.fanoutcdn.com/). Requests made to Fanout Cloud should be routed through ngrok to the local instance.
