@@ -1,0 +1,28 @@
+{
+  "name": "simple-proxy-server",
+  "version": "1.0.1",
+  "description": "A simple proxy server and two test servers it can proxy to",
+  "main": "proxy.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/skabbi/Simple-Proxy-Server.git"
+  },
+  "keywords": [
+    "proxy",
+    "proxy-server"
+  ],
+  "author": "Skabbi",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/skabbi/Simple-Proxy-Server/issues"
+  },
+  "homepage": "https://github.com/skabbi/Simple-Proxy-Server#readme",
+  "dependencies": {
+    "http-proxy": "^1.16.2",
+    "http-proxy-rules": "^1.1.0",
+    "restify": "^4.3.0"
+  }
+}
