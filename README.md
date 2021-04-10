@@ -26,7 +26,9 @@ Note: default storage is sqlite.
 Install dependencies for proxy server:
 
 ```sh
+cd proxy-server/
 npm install
+cd ..
 ```
 
 ### Running with Fanout Cloud
