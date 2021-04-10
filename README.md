@@ -42,7 +42,7 @@ Be sure to replace `{realm-id}` and `{realm-key}` with the values from the Fanou
 In a separate shell, run proxy server for local tunneling:
 
 ```sh
-node proxy.js
+node proxy-server/proxy.js
 ```
 
 In the Fanout control panel, set the ngrok host/port as the Origin Server.
