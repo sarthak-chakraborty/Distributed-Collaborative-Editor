@@ -11,6 +11,9 @@ from django_grip import publish
 from .text_operation import TextOperation
 from .models import User, Document, DocumentChange
 import requests
+import time
+import threading
+
 
 """
 isPrimary()
@@ -21,6 +24,28 @@ STATE = 'primary'		## one of ['primary', 'secondary', 'recovering']
 REPLICA_URL = 'http://127.0.0.1:8001'		## URL of the other replica to send heartbeat / updates
 # DOUBT: Do we need to send special heartbeats? 
 PROXY_URL = ''		## For sending heartbeat
+
+HEARTBEAT_TIMEOUT = 5
+ls1hbr = time.time()
+
+def background_runner():
+    while(1):
+        time.sleep(HEARTBEAT_TIMEOUT)
+        print('IN background runner')
+        payload = {
+            'type': 'HB',
+            'sender': STATE,
+        }
+        r2 = requests.post(REPLICA_URL+'/api/HB/', data = payload)
+        print(r2.reason)
+        # print(r2.text)
+        if r2.ok:
+            print('Heartbeat successfully sent')
+        else:
+            print('Error in sending hb')
+
+sep = threading.Thread(target = background_runner)
+sep.start()
 
 def _doc_get_or_create(eid):
 	try:
@@ -319,3 +344,12 @@ def document_changes(request, document_id):
 diff URL for heartbeat to know whether the primary is alive or not
 if not, elect primary
 """
+
+def heartbeat_recv(request):
+	## use sender details
+	if request.method == 'POST':
+		# sender = json.loads(request.POST['sender'])
+		sender = request.POST['sender']
+		if sender == 'secondary':
+			ls1hbr = time.time()
+	return JsonResponse({'ok':'ok'})

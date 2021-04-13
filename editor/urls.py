@@ -3,6 +3,7 @@ from editor import views
 
 urlpatterns = [
 	url(r'^$', views.index, name='index-default'),
+	url(r'^api/HB/$',views.heartbeat_recv, name='heart-beat'),
 	url(r'^api/users/$', views.users),
 	url(r'^api/users/(?P<user_id>[^/]+)/$', views.user),
 	url(r'^api/documents/(?P<document_id>[^/]+)/$', views.document),
