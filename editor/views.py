@@ -18,8 +18,8 @@ isSecondary()
 """
 STATE = 'primary'		## one of ['primary', 'secondary', 'recovering']
 # TODO: - Add Replica urls 
-REPLICA_URL = ''		## URL of the other replica to send heartbeat / updates
-# DOUBT: Do we need to send special heartbeats?
+REPLICA_URL = 'http://127.0.0.1:8001'		## URL of the other replica to send heartbeat / updates
+# DOUBT: Do we need to send special heartbeats? 
 PROXY_URL = ''		## For sending heartbeat
 
 def _doc_get_or_create(eid):
@@ -234,10 +234,13 @@ def document_changes(request, document_id):
 				2. receive acks
 				"""
 				payload = {
-					'request_id':request_id, 
-					'parent_version': parent_version, 
+					'request-id':request_id, 
+					'parent-version': parent_version, 
 					'data':json.dumps(op.ops)}
-				r = requests.POST(REPLICA_URL+'/api/documents/{}/changes'.format(document_id), data = payload)
+				r = requests.post(REPLICA_URL+'/api/documents/{}/changes/'.format(document_id), data = payload)
+				print(r)
+				print(r.reason)
+				print(r.text)
 				if r.ok:
 					event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
 						c.version, json.dumps(c.export()))
@@ -256,7 +259,9 @@ def document_changes(request, document_id):
 
 	elif STATE == 'secondary':
 		if request.method == 'POST':
-			data = json.loads(request.POST['data'])
+
+			opdata = json.loads(request.POST['data'])
+			op = TextOperation(opdata)
 			request_id = request.POST['request-id']
 			parent_version = int(request.POST['parent-version'])
 			doc = _doc_get_or_create(document_id)
@@ -271,22 +276,24 @@ def document_changes(request, document_id):
 				except DocumentChange.DoesNotExist:
 
 					## Is it needed?
-					# changes_since = DocumentChange.objects.filter(
-					# 	document=doc,
-					# 	version__gt=parent_version,
-					# 	version__lte=doc.version).order_by('version')
+					changes_since = DocumentChange.objects.filter(
+						document=doc,
+						version__gt=parent_version,
+						version__lte=doc.version).order_by('version')
 
-					# for c in changes_since:
-					# 	op2 = TextOperation(json.loads(c.data))
-					# 	try:
-					# 		op, _ = TextOperation.transform(op, op2)
-					# 	except:
-					# 		return HttpResponseBadRequest(
-					# 			'unable to transform against version {}'.format(c.version))
+					for c in changes_since:
+						op2 = TextOperation(json.loads(c.data))
+						try:
+							op, _ = TextOperation.transform(op, op2)
+						except Exception as e:
+							print(e)
+							return HttpResponseBadRequest(
+								'unable to transform against version {}'.format(c.version))
 
 					try:
 						doc.content = op(doc.content)
-					except:
+					except Exception as e:
+						print(e)
 						return HttpResponseBadRequest("Unable to apply change in secondary database")
 					
 					next_version = doc.version + 1
@@ -299,6 +306,7 @@ def document_changes(request, document_id):
 					c.save()
 					doc.version = next_version
 					doc.save()
+			return JsonResponse({'ok':'ok'})
 
 """
 1. URL for getting only the change
