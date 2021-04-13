@@ -1,5 +1,6 @@
 import json
-from urllib.parse import urlparse
+# from urllib.parse import urlparse
+from urlparse import urlparse
 from django.db import transaction, IntegrityError
 from django.http import HttpResponse, HttpResponseBadRequest, \
 	HttpResponseNotAllowed, HttpResponseNotFound, JsonResponse
@@ -9,11 +10,17 @@ from gripcontrol import Channel, HttpStreamFormat
 from django_grip import publish
 from .text_operation import TextOperation
 from .models import User, Document, DocumentChange
+import requests
 
 """
 isPrimary()
 isSecondary()
 """
+STATE = 'primary'		## one of ['primary', 'secondary', 'recovering']
+# TODO: - Add Replica urls 
+REPLICA_URL = ''		## URL of the other replica to send heartbeat / updates
+# DOUBT: Do we need to send special heartbeats?
+PROXY_URL = ''		## For sending heartbeat
 
 def _doc_get_or_create(eid):
 	try:
@@ -89,155 +96,209 @@ def document(request, document_id):
 		return HttpResponseNotAllowed(['GET'])
 
 def document_changes(request, document_id):
-	gchannel = 'document-{}'.format(document_id)
+	if STATE == 'primary':
+		gchannel = 'document-{}'.format(document_id)
 
-	if request.method == 'GET':
-		link = False
-		sse = False
-		if request.GET.get('link') == 'true':
-			link = True
-			sse = True
-		else:
-			accept = request.META.get('HTTP_ACCEPT')
-			if accept and accept.find('text/event-stream') != -1:
+		if request.method == 'GET':
+			link = False
+			sse = False
+			if request.GET.get('link') == 'true':
+				link = True
 				sse = True
-
-		after = None
-
-		last_id = request.grip.last.get(gchannel)
-		if last_id:
-			after = int(last_id)
-
-		if after is None and sse:
-			last_id = request.META.get('Last-Event-ID')
-			if last_id:
-				after = int(last_id)
-
-		if after is None and sse:
-			last_id = request.GET.get('lastEventId')
-			if last_id:
-				after = int(last_id)
-
-		if after is None:
-			afterstr = request.GET.get('after')
-			if afterstr:
-				after = int(afterstr)
-
-		try:
-			doc = Document.objects.get(eid=document_id)
-			if after is not None:
-				if after > doc.version:
-					return HttpResponseNotFound('version in the future')
-				changes = DocumentChange.objects.filter(
-					document=doc,
-					version__gt=after).order_by('version')[:50]
-				out = [c.export() for c in changes]
-				if len(out) > 0:
-					last_version = out[-1]['version']
-				else:
-					last_version = after
 			else:
-				out = []
-				last_version = doc.version
-		except Document.DoesNotExist:
-			if after is not None and after > 0:
-				return HttpResponseNotFound('version in the future')
-			out = []
-			last_version = 0
+				accept = request.META.get('HTTP_ACCEPT')
+				if accept and accept.find('text/event-stream') != -1:
+					sse = True
 
-		if sse:
-			body = ''
-			if not link:
-				body += 'event: opened\ndata:\n\n'
-			for i in out:
-				event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
-					i['version'], json.dumps(i))
-				body += event
-			resp = HttpResponse(body, content_type='text/event-stream')
-			parsed = urlparse(reverse('document-changes', args=[document_id]))
-			instruct = request.grip.start_instruct()
-			instruct.set_next_link('{}?link=true&after={}'.format(
-				parsed.path, last_version))
-			if len(out) < 50:
-				instruct.set_hold_stream()
-				instruct.add_channel(Channel(gchannel, prev_id=str(last_version)))
-				instruct.set_keep_alive('event: keep-alive\ndata:\n\n; format=cstring', 20)
-			return resp
-		else:
-			return JsonResponse({'changes': out})
-	elif request.method == 'POST':
-		opdata = json.loads(request.POST['op'])
-		for i in opdata:
-			if not isinstance(i, int) and not isinstance(i, basestring):
-				return HttpResponseBadRequest('invalid operation');
+			after = None
 
-		op = TextOperation(opdata)
+			last_id = request.grip.last.get(gchannel)
+			if last_id:
+				after = int(last_id)
 
-		request_id = request.POST['request-id']
-		parent_version = int(request.POST['parent-version'])
-		doc = _doc_get_or_create(document_id)
+			if after is None and sse:
+				last_id = request.META.get('Last-Event-ID')
+				if last_id:
+					after = int(last_id)
 
-		saved = False
-		with transaction.atomic():
-			doc = Document.objects.select_for_update().get(id=doc.id)
+			if after is None and sse:
+				last_id = request.GET.get('lastEventId')
+				if last_id:
+					after = int(last_id)
+
+			if after is None:
+				afterstr = request.GET.get('after')
+				if afterstr:
+					after = int(afterstr)
+
 			try:
-				# already submitted?
-				c = DocumentChange.objects.get(
-					document=doc,
-					request_id=request_id,
-					parent_version=parent_version)
-			except DocumentChange.DoesNotExist:
-				changes_since = DocumentChange.objects.filter(
-					document=doc,
-					version__gt=parent_version,
-					version__lte=doc.version).order_by('version')
+				doc = Document.objects.get(eid=document_id)
+				if after is not None:
+					if after > doc.version:
+						return HttpResponseNotFound('version in the future')
+					changes = DocumentChange.objects.filter(
+						document=doc,
+						version__gt=after).order_by('version')[:50]
+					out = [c.export() for c in changes]
+					if len(out) > 0:
+						last_version = out[-1]['version']
+					else:
+						last_version = after
+				else:
+					out = []
+					last_version = doc.version
+			except Document.DoesNotExist:
+				if after is not None and after > 0:
+					return HttpResponseNotFound('version in the future')
+				out = []
+				last_version = 0
 
-				for c in changes_since:
-					op2 = TextOperation(json.loads(c.data))
+			if sse:
+				body = ''
+				if not link:
+					body += 'event: opened\ndata:\n\n'
+				for i in out:
+					event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
+						i['version'], json.dumps(i))
+					body += event
+				resp = HttpResponse(body, content_type='text/event-stream')
+				parsed = urlparse(reverse('document-changes', args=[document_id]))
+				instruct = request.grip.start_instruct()
+				instruct.set_next_link('{}?link=true&after={}'.format(
+					parsed.path, last_version))
+				if len(out) < 50:
+					instruct.set_hold_stream()
+					instruct.add_channel(Channel(gchannel, prev_id=str(last_version)))
+					instruct.set_keep_alive('event: keep-alive\ndata:\n\n; format=cstring', 20)
+				return resp
+			else:
+				return JsonResponse({'changes': out})
+		elif request.method == 'POST':
+			opdata = json.loads(request.POST['op'])
+			for i in opdata:
+				if not isinstance(i, int) and not isinstance(i, basestring):
+					return HttpResponseBadRequest('invalid operation');
+
+			op = TextOperation(opdata)
+
+			request_id = request.POST['request-id']
+			parent_version = int(request.POST['parent-version'])
+			doc = _doc_get_or_create(document_id)
+
+			saved = False
+			with transaction.atomic():
+				doc = Document.objects.select_for_update().get(id=doc.id)
+				try:
+					# already submitted?
+					c = DocumentChange.objects.get(
+						document=doc,
+						request_id=request_id,
+						parent_version=parent_version)
+				except DocumentChange.DoesNotExist:
+					changes_since = DocumentChange.objects.filter(
+						document=doc,
+						version__gt=parent_version,
+						version__lte=doc.version).order_by('version')
+
+					for c in changes_since:
+						op2 = TextOperation(json.loads(c.data))
+						try:
+							op, _ = TextOperation.transform(op, op2)
+						except:
+							return HttpResponseBadRequest(
+								'unable to transform against version {}'.format(c.version))
+
 					try:
-						op, _ = TextOperation.transform(op, op2)
+						doc.content = op(doc.content)
 					except:
 						return HttpResponseBadRequest(
-							'unable to transform against version {}'.format(c.version))
+							'unable to apply {} to version {}'.format(
+							json.dumps(op.ops), doc.version))
 
-				try:
-					doc.content = op(doc.content)
-				except:
+					next_version = doc.version + 1
+					c = DocumentChange(
+						document=doc,
+						version=next_version,
+						request_id=request_id,
+						parent_version=parent_version,
+						data=json.dumps(op.ops))
+					c.save()
+					doc.version = next_version
+					doc.save()
+					saved = True
+
+			if saved:
+
+				"""
+				1. Send c to secondary (diff url) [ATOMIC MULTICAST]
+				2. receive acks
+				"""
+				payload = {
+					'request_id':request_id, 
+					'parent_version': parent_version, 
+					'data':json.dumps(op.ops)}
+				r = requests.POST(REPLICA_URL+'/api/documents/{}/changes'.format(document_id), data = payload)
+				if r.ok:
+					event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
+						c.version, json.dumps(c.export()))
+					publish(
+						gchannel,
+						HttpStreamFormat(event),
+						id=str(c.version),
+						prev_id=str(c.version - 1))
+				else:
 					return HttpResponseBadRequest(
-						'unable to apply {} to version {}'.format(
-						json.dumps(op.ops), doc.version))
+							'Error in sending data to replica')
 
-				next_version = doc.version + 1
-				c = DocumentChange(
-					document=doc,
-					version=next_version,
-					request_id=request_id,
-					parent_version=parent_version,
-					data=json.dumps(op.ops))
-				c.save()
-				doc.version = next_version
-				doc.save()
-				saved = True
+			return JsonResponse({'version': c.version})
+		else:
+			return HttpResponseNotAllowed(['GET', 'POST'])
 
-		if saved:
+	elif STATE == 'secondary':
+		if request.method == 'POST':
+			data = json.loads(request.POST['data'])
+			request_id = request.POST['request-id']
+			parent_version = int(request.POST['parent-version'])
+			doc = _doc_get_or_create(document_id)
+			with transaction.atomic():
+				doc = Document.objects.select_for_update().get(id=doc.id)
+				try:
+					c = DocumentChange.objects.get(
+						document=doc,
+						request_id=request_id,
+						parent_version=parent_version)
+					print("Document change already exists!")
+				except DocumentChange.DoesNotExist:
 
-			"""
-			1. Send c to secondary (diff url) [ATOMIC MULTICAST]
-			2. receive acks
-			"""
+					## Is it needed?
+					# changes_since = DocumentChange.objects.filter(
+					# 	document=doc,
+					# 	version__gt=parent_version,
+					# 	version__lte=doc.version).order_by('version')
 
-			event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
-				c.version, json.dumps(c.export()))
-			publish(
-				gchannel,
-				HttpStreamFormat(event),
-				id=str(c.version),
-				prev_id=str(c.version - 1))
+					# for c in changes_since:
+					# 	op2 = TextOperation(json.loads(c.data))
+					# 	try:
+					# 		op, _ = TextOperation.transform(op, op2)
+					# 	except:
+					# 		return HttpResponseBadRequest(
+					# 			'unable to transform against version {}'.format(c.version))
 
-		return JsonResponse({'version': c.version})
-	else:
-		return HttpResponseNotAllowed(['GET', 'POST'])
-
+					try:
+						doc.content = op(doc.content)
+					except:
+						return HttpResponseBadRequest("Unable to apply change in secondary database")
+					
+					next_version = doc.version + 1
+					c = DocumentChange(
+						document=doc,
+						version=next_version,
+						request_id=request_id,
+						parent_version=parent_version,
+						data=json.dumps(op.ops))
+					c.save()
+					doc.version = next_version
+					doc.save()
 
 """
 1. URL for getting only the change
