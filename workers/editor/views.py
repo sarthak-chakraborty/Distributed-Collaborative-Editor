@@ -23,7 +23,7 @@ REPLICA_URLS = [							# All replica urls
 	'http://127.0.0.1:8003'
 	# 'http://127.0.0.1:8003' # Add this if we need 3 servers
 ]
-
+ALIVE_STATUS = [True,True,True]				# Used by master
 CURRENT_PRIMARY = 0							# Index of current primary
 
 HEARTBEAT_TIMEOUT = 1						# Time between consequitive heartbeats
@@ -80,6 +80,8 @@ def index(request, document_id=None):
 			'https' if request.is_secure() else 'http',
 			request.META.get('HTTP_HOST') or 'localhost',
 			reverse('index-default'))
+
+		print(base_url)
 		if base_url.endswith('/'):
 			base_url = base_url[:-1]
 
@@ -87,7 +89,9 @@ def index(request, document_id=None):
 			doc = Document.objects.get(eid=document_id)
 		except Document.DoesNotExist:
 			doc = Document(eid=document_id)
-
+		
+		print("\n DOC:")
+		print(doc)
 		context = {
 			'document_id': document_id,
 			'document_title': doc.title,
@@ -95,10 +99,13 @@ def index(request, document_id=None):
 			'document_version': doc.version,
 			'base_url': base_url
 		}
+		print("\nCONTEXT:")
+		print(context)
 
-		resp = render(request, 'editor/index.html', context)
-		resp['Cache-Control'] = 'no-store, must-revalidate'
-		return resp
+		# resp = render(request, 'editor/index.html', context)
+		# resp['Cache-Control'] = 'no-store, must-revalidate'
+		# return resp
+		return JsonResponse(context)
 
 
 def users(request):
