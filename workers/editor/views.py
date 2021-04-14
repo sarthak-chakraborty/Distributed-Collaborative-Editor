@@ -165,11 +165,12 @@ def document_changes(request, document_id):
 					sse = True
 
 			after = None
-
+			print("Link:{}, sse:{}".format(link, sse))
 			last_id = request.grip.last.get(gchannel)
 			if last_id:
 				after = int(last_id)
-
+			
+			print("after:{}, last_id:{}".format(after, last_id))
 			if after is None and sse:
 				last_id = request.META.get('Last-Event-ID')
 				if last_id:
@@ -189,6 +190,7 @@ def document_changes(request, document_id):
 				doc = Document.objects.get(eid=document_id)
 				if after is not None:
 					if after > doc.version:
+						print("EXIT-1")
 						return HttpResponseNotFound('version in the future')
 					changes = DocumentChange.objects.filter(
 						document=doc,
@@ -198,15 +200,18 @@ def document_changes(request, document_id):
 						last_version = out[-1]['version']
 					else:
 						last_version = after
+					print("last-version-if:{}".format(last_version))
 				else:
 					out = []
 					last_version = doc.version
+					print("last_version-else:{}".format(last_version))
 			except Document.DoesNotExist:
 				if after is not None and after > 0:
 					return HttpResponseNotFound('version in the future')
 				out = []
 				last_version = 0
-
+			
+			print("In between, sse:{}, link:{}".format(sse, link))
 			if sse:
 				body = ''
 				if not link:
@@ -220,8 +225,11 @@ def document_changes(request, document_id):
 				resp_content = {'body':body,
 							   'last_version':last_version,
 							   'out':out,
-							   'gchannel':gchannel}
+							   'gchannel':gchannel,
+							   'success':True}
 
+				print(resp_content)
+				print(resp_content['body'])
 				return JsonResponse(resp_content)
 
 				# resp = HttpResponse(body, content_type='text/event-stream')
