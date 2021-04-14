@@ -101,10 +101,10 @@ def index(request, document_id=None):
 		print("\nCONTEXT:")
 		print(context)
 
-		# resp = render(request, 'editor/index.html', context)
+		resp = render(request, 'editor/index.html', context)
 		# resp['Cache-Control'] = 'no-store, must-revalidate'
 		# return resp
-		resp = JsonResponse(context)
+		# resp = JsonResponse(context)
 		resp['Cache-Control'] = 'no-store, must-revalidate'
 		return resp
 
@@ -400,7 +400,7 @@ if not, elect primary
 
 def change_status(request):
 	if STATE in ['primary', 'secondary']:
-		index = request.POST['index']
+		index = int(request.POST['index'])
 		status = request.POST['status']
 		if status == 'crash':
 			ALIVE_STATUS[index] = False

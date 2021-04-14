@@ -35,6 +35,7 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 
 
 def crash_detect():
+	global CURRENT_PRIMARY
 	while(1):
 		for i in range(len(HB_TIMES)):
 			if ALIVE_STATUS[i] and time.time() - HB_TIMES[i] > HEARTBEAT_MISS_TIMEOUT:
@@ -88,15 +89,14 @@ def index(request, document_id=None):
 	print(url)
 	if request.method == 'GET':
 		payload = request.GET.dict()
-		response = requests.get(url, payload)
-
-		context = json.loads(response.text)
-		response = render(request, 'editor/index.html', context)
-		response['Cache-Control'] = 'no-store, must-revalidate'
+		response = HttpResponse(requests.get(url, payload).text)
+		# context = json.loads(response.text)
+		# response = render(request, 'editor/index.html', context)
+		# response['Cache-Control'] = 'no-store, must-revalidate'
 		
 	elif request.method == 'POST':
 		payload = request.POST.dict()
-		response = requests.post(url, payload)
+		response = HttpResponse(requests.post(url, payload).text)
 	return response		
 		
 
