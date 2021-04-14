@@ -14,10 +14,10 @@ import requests
 import time
 import threading
 
-STATE = 'primary'		# one of ['primary', 'secondary', 'recovering']
-INDEX = 0 				# Index of the current replica - not applicable to master
+STATE = 'secondary'		# one of ['primary', 'secondary', 'recovering']
+INDEX = 1 				# Index of the current replica - not applicable to master
 MASTER_URL = 'http://127.0.0.1:8001'		# The master server
-SELF_URL = 'http://127.0.0.1:8002'
+SELF_URL = 'http://127.0.0.1:8003'
 REPLICA_URLS = [							# All replica urls
 	'http://127.0.0.1:8002',
 	'http://127.0.0.1:8003'
@@ -124,10 +124,10 @@ def index(request, document_id=None):
 		print("\nCONTEXT:")
 		print(context)
 
-		resp = render(request, 'editor/index.html', context)
+		# resp = render(request, 'editor/index.html', context)
 		# resp['Cache-Control'] = 'no-store, must-revalidate'
 		# return resp
-		# resp = JsonResponse(context)
+		resp = JsonResponse(context)
 		resp['Cache-Control'] = 'no-store, must-revalidate'
 		return resp
 
@@ -463,7 +463,7 @@ def heartbeat_recv(request):
 
 def change_status(request):
 	if STATE in ['primary', 'secondary']:
-		index = int(request.POST['index'])
+		index = request.POST['index']
 		status = request.POST['status']
 		if status == 'crash':
 			ALIVE_STATUS[index] = False
