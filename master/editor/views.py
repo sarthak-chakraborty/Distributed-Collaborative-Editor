@@ -138,11 +138,8 @@ def document_changes(request, document_id):
 	if request.method == 'GET':
 		payload = request.GET.dict()
 		response = requests.get(url, payload)
-		print(response)
-		print(response.content)
-		print(response.text)
+
 		resp_content = json.loads(response.text)
-		print(resp_content)
 		if "success" in resp_content:
 			if resp_content["success"]:
 				response = HttpResponse(resp_content['body'], content_type='text/event-stream')
@@ -159,6 +156,24 @@ def document_changes(request, document_id):
 	elif request.method == 'POST':
 		payload = request.POST.dict()
 		response = requests.post(url, payload)
+
+		if response.status_code == 200:
+			resp_content = json.loads(response.text)
+			if "success" in resp_content:
+				if resp_content["success"]:
+					publish(
+						resp_content['gchannel'],
+						HttpStreamFormat(resp_content['event']),
+						id=str(resp_content['c.version']),
+						prev_id=str(resp_content['c.version - 1']))
+
+				response = JsonResponse({'version': resp_content['version']})
+
+		elif response.status_code == 500:
+			response = HttpResponseBadRequest(response.text)
+		else:
+			response = HttpResponseNotFound('invalid')
+
 	return response		
 
 
