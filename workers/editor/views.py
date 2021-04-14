@@ -45,7 +45,10 @@ def heartbeat_sender():
 				'sender': INDEX,
 				'sender_state': STATE
 			}
-			r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+			try:
+				r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+			except:
+				pass
 			print(r2.reason)
 			# print(r2.text)
 			if r2.ok:
@@ -223,6 +226,7 @@ def document_changes(request, document_id):
 							   'gchannel':gchannel,
 							   'success':True}
 
+				print('\n sse = true, sending response - ',resp_content)
 				return JsonResponse(resp_content)
 
 				# resp = HttpResponse(body, content_type='text/event-stream')
@@ -236,6 +240,7 @@ def document_changes(request, document_id):
 				# 	instruct.set_keep_alive('event: keep-alive\ndata:\n\n; format=cstring', 20)
 				# return resp
 			else:
+				print('\n sse = true, sending response - ',out)
 				return JsonResponse({'changes': out})
 
 		elif request.method == 'POST':

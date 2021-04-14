@@ -36,9 +36,10 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 
 def crash_detect():
 	global CURRENT_PRIMARY
-	global ALIVE_STATUS
+	time.sleep(5)
 	while(1):
 		for i in range(len(HB_TIMES)):
+			# print('checking server ',i, ALIVE_STATUS[i] and time.time() - HB_TIMES[i] > HEARTBEAT_MISS_TIMEOUT)
 			if ALIVE_STATUS[i] and time.time() - HB_TIMES[i] > HEARTBEAT_MISS_TIMEOUT:
 				print('Detected crash. Server {} failed to send heartbeat 3 times'.format(i))
 				ALIVE_STATUS[i] = False
@@ -48,7 +49,10 @@ def crash_detect():
 						'index': i,
 						'status': 'crash'		## one of ['alive','crash']
 					}
-					requests.post(url,payload)
+					try:
+						requests.post(url,payload)
+					except:
+						pass
 
 				if CURRENT_PRIMARY == i:
 					print('failed node is primary')
@@ -56,7 +60,10 @@ def crash_detect():
 					while not done:
 						previous_primary = CURRENT_PRIMARY
 						CURRENT_PRIMARY = (i+1)%len(REPLICA_URLS)
-						requests.get(REPLICA_URLS[previous_primary]+'/api/become_secondary/')
+						try:
+							requests.get(REPLICA_URLS[previous_primary]+'/api/become_secondary/')
+						except:
+							pass
 						r = requests.get(REPLICA_URLS[CURRENT_PRIMARY]+'/api/become_primary/')
 						if r.ok:
 							done = True

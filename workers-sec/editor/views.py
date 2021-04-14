@@ -15,7 +15,7 @@ import time
 import threading
 
 STATE = 'secondary'		# one of ['primary', 'secondary', 'recovering']
-INDEX = 0 				# Index of the current replica - not applicable to master
+INDEX = 1 				# Index of the current replica - not applicable to master
 MASTER_URL = 'http://127.0.0.1:8001'		# The master server
 SELF_URL = 'http://127.0.0.1:8003'
 REPLICA_URLS = [							# All replica urls
@@ -45,7 +45,10 @@ def heartbeat_sender():
 				'sender': INDEX,
 				'sender_state': STATE
 			}
-			r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+			try:
+				r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+			except:
+				pass
 			print(r2.reason)
 			# print(r2.text)
 			if r2.ok:
