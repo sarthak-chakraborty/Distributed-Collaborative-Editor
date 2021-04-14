@@ -9,4 +9,7 @@ urlpatterns = [
 	url(r'^api/documents/(?P<document_id>[^/]+)/$', views.document),
 	url(r'^api/documents/(?P<document_id>[^/]+)/changes/$', views.document_changes, name='document-changes'),
 	url(r'^(?P<document_id>[^/]+)$', views.index),
+	url(r'^api/become_primary/$', views.become_primary, name='become_primary'),
+	url(r'^api/become_secondary/$',views.become_secondary, name='become_secon'),
+	url(r'^api/change_status/$',views.change_status,name='change status')
 ]
