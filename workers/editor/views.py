@@ -459,6 +459,8 @@ def heartbeat_recv(request):
 				print "Lease extend ACK successfully sent by me i.e ", INDEX
 			else:
 				print('Error in sending lease extend ACK')
+				
+	return JsonResponse({'ok':'ok'})
 
 
 def change_status(request):
