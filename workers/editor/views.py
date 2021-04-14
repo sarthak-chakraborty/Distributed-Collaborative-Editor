@@ -42,6 +42,14 @@ Lease_begin_time=time.time()
 Lease_sent_time=time.time()	
 
 def heartbeat_sender():
+	global STATE
+	global IS_SOME_PRIMARY
+	global Lease_sent_time
+	global Lease_begin_time
+	global ALIVE_STATUS
+	global last_heard_from_secondary
+	global safe_to_send_new_lease
+	global CURRENT_PRIMARY
 	if STATE in ['primary','secondary']:
 		while(1):
 			time.sleep(HEARTBEAT_TIMEOUT)
