@@ -1,0 +1,232 @@
+{% load static %}
+<html>
+  <head>
+    <link rel="stylesheet" href="{% static 'editor/codemirror.css' %}" />
+    <script src="{% static 'editor/jquery-3.1.1.min.js' %}"></script>
+    <script src="{% static 'editor/codemirror.js' %}"></script>
+    <script src="{% static 'editor/ot.js' %}"></script>
+    <script>
+      var SEND_DELAY = 100;
+      var ERROR_DELAY = 5000;
+      var STREAM_TIMEOUT = 30000;
+
+      var documentId = '{{ document_id|escapejs }}';
+      var cm = null;
+      var es = null;
+      var currentVersion = null;
+      var needVersion = null;
+      var pendingOp = null;
+      var sending = false;
+      var sendingOp = null;
+      var sendingReqId = null;
+      var pendingRemoteChanges = [];
+      var ignoreLocalChanges = false;
+      var streamTimeoutTimer = null;
+
+      var documentInitialContent = '{{ document_content|escapejs }}';
+      var documentInitialVersion = {{ document_version }};
+
+      var baseUri = '/api/documents/' + documentId;
+
+      var makeId = function () {
+        var out = '';
+        var possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        for(var i = 0; i < 16; ++i) {
+          out += possible.charAt(Math.floor(Math.random() * possible.length));
+        }
+        return out;
+      };
+
+      var handleRemoteChange = function (change) {
+        // don't apply remote ops if we've started sending
+        if(sendingReqId) {
+          pendingRemoteChanges.push(change);
+          return;
+        }
+
+        applyRemoteChange(change);
+
+        if(pendingOp && needVersion == null && !sending) {
+          sending = true;
+          setTimeout(send, SEND_DELAY);
+        }
+      };
+
+      var applyRemoteChange = function (change) {
+        var op = ot.TextOperation.fromJSON(change.op);
+
+        var fromSelf = (needVersion != null && change.version == needVersion);
+
+        var logMsg = 'remote change: ' + change.version + ' ' + JSON.stringify(op.ops);
+        if(fromSelf) {
+          logMsg += ' (ignoring)';
+        }
+        console.log(logMsg);
+
+        if(!fromSelf) {
+          if(sendingOp) {
+            console.log('transforming with sendingOp: ' + JSON.stringify(sendingOp.ops));
+            var result = ot.TextOperation.transform(op, sendingOp);
+            op = result[0];
+            sendingOp = result[1]; // we won't send this again
+          }
+          if(pendingOp) {
+            console.log('transforming with pendingOp: ' + JSON.stringify(pendingOp.ops));
+            var result = ot.TextOperation.transform(op, pendingOp);
+            op = result[0];
+            pendingOp = result[1];
+          }
+          ignoreLocalChanges = true;
+          var pos = 0;
+          for(var i = 0; i < op.ops.length; ++i) {
+            var subop = op.ops[i];
+            if(ot.TextOperation.isRetain(subop)) {
+              pos += subop;
+            } else if(ot.TextOperation.isInsert(subop)) {
+              cm.replaceRange(subop, cm.posFromIndex(pos));
+              pos += subop.length;
+            } else if(ot.TextOperation.isDelete(subop)) {
+              cm.replaceRange('', cm.posFromIndex(pos), cm.posFromIndex(pos - subop));
+            }
+          }
+          ignoreLocalChanges = false;
+        }
+
+        currentVersion = change.version;
+        if(needVersion != null && currentVersion >= needVersion) {
+          needVersion = null;
+          sendingOp = null;
+        }
+      };
+
+      var send = function() {
+        if(!sendingReqId && pendingOp) {
+          sendingOp = pendingOp;
+          sendingReqId = makeId();
+          pendingOp = null;
+        }
+        $.post({
+          url: baseUri + '/changes/',
+          data: {
+            'request-id': sendingReqId,
+            'parent-version': currentVersion,
+            op: JSON.stringify(sendingOp.ops)
+          },
+          dataType: 'json'
+        }).done(function (data) {
+          sending = false;
+          sendingReqId = null;
+          if(data.version <= currentVersion) {
+            // we don't process remote changes while sending,
+            //   so the sent change MUST be later than the
+            //   last received change
+            throw 'integrity error: send ack went backwards';
+          }
+          needVersion = data.version;
+          while(pendingRemoteChanges.length > 0) {
+            var change = pendingRemoteChanges[0];
+            applyRemoteChange(change);
+            pendingRemoteChanges = pendingRemoteChanges.slice(1);
+          }
+          if(pendingOp && needVersion == null) {
+            sending = true;
+            setTimeout(send, SEND_DELAY);
+          }
+        }).fail(function (xhr) {
+          if(xhr.status == 0 || (xhr.status >= 500 && xhr.status < 599)) {
+            // try again later
+            setTimeout(send, ERROR_DELAY);
+            return;
+          }
+          alert('sync error');
+        });
+      };
+
+      var streamConnect = function () {
+        if(es != null) {
+          es.close();
+        }
+
+        console.log('stream connecting...');
+
+        es = new EventSource(baseUri + '/changes/?after=' + currentVersion);
+        es.addEventListener('opened', function () {
+          console.log('stream connected');
+        });
+        es.addEventListener('change', function (e) {
+          refreshTimeout();
+          var data = JSON.parse(e.data);
+          handleRemoteChange(data);
+        });
+        es.addEventListener('keep-alive', function () {
+          refreshTimeout();
+        });
+        es.addEventListener('error', function () {
+          if(streamTimeoutTimer != null) {
+            clearTimeout(streamTimeoutTimer);
+            streamTimeoutTimer = null;
+          }
+          es.close();
+          es = null;
+          console.log('stream error, will reconnect shortly');
+          setTimeout(streamConnect, ERROR_DELAY);
+        });
+
+        refreshTimeout();
+      };
+
+      var refreshTimeout = function () {
+        if(streamTimeoutTimer != null) {
+          clearTimeout(streamTimeoutTimer);
+        }
+        streamTimeoutTimer = setTimeout(function () {
+          streamTimeoutTimer = null;
+          es.close();
+          es = null;
+          console.log('stream timeout, will reconnect shortly');
+          setTimeout(streamConnect, ERROR_DELAY);
+        }, STREAM_TIMEOUT);
+      };
+
+      $(document).ready(function () {
+        $('#input').attr('disabled', true);
+
+        cm = CodeMirror.fromTextArea($('#content').get(0), {
+          lineNumbers: true,
+          lineWrapping: true
+        });
+
+        cm.setValue(documentInitialContent);
+        currentVersion = documentInitialVersion;
+
+        cm.on('changes', function (cm, changes) {
+          if(ignoreLocalChanges) {
+            return;
+          }
+          var operation = ot.CodeMirrorAdapter.operationFromCodeMirrorChanges(changes, cm)[0];
+          console.log('local change: ' + JSON.stringify(operation.ops));
+          if(pendingOp) {
+            pendingOp = pendingOp.compose(operation);
+          } else {
+            pendingOp = operation;
+          }
+          if(needVersion == null && !sending) {
+            sending = true;
+            setTimeout(send, SEND_DELAY);
+          }
+        });
+
+        streamConnect();
+
+        $('#input').removeAttr('disabled');
+      });
+    </script>
+  </head>
+  <body>
+    <h1>{{ document_id }}</h1>
+    <div id="input">
+      <textarea id="content"></textarea>
+    </div>
+    <p>Start another document by browsing to <code>{{ base_url }}/{any-string}</code> .</p>
+  </body>
+</html>
