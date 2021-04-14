@@ -43,29 +43,29 @@ Lease_sent_time=time.time()
 
 def heartbeat_sender():
 	if STATE in ['primary','secondary']:
-	while(1):
-		time.sleep(HEARTBEAT_TIMEOUT)
-		print('IN background runner')
-		payload = {
-			'type': 'HB',
-			'sender': INDEX,
-			'sender_state': STATE
-		}
-		r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
-		print(r2.reason)
-		# print(r2.text)
-		if r2.ok:
-			print('Heartbeat successfully sent')
-		else:
-			print('Error in sending hb')
+		while(1):
+			time.sleep(HEARTBEAT_TIMEOUT)
+			print('IN background runner')
+			payload = {
+				'type': 'HB',
+				'sender': INDEX,
+				'sender_state': STATE
+			}
+			r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+			print(r2.reason)
+			# print(r2.text)
+			if r2.ok:
+				print('Heartbeat successfully sent')
+			else:
+				print('Error in sending hb')
 
-		if time.time()-Lease_begin_time >= LEASE_TIMEOUT and STATE=='primary':
-			print("My lease has now expired")
-			# ALIVE_STATUS[CURRENT_PRIMARY]=False
-			STATE='secondary'
-			# IS_SOME_PRIMARY=0
+			if time.time()-Lease_begin_time >= LEASE_TIMEOUT and STATE=='primary':
+				print("My lease has now expired")
+				# ALIVE_STATUS[CURRENT_PRIMARY]=False
+				STATE='secondary'
+				# IS_SOME_PRIMARY=0
 
-		time.sleep(1)
+			time.sleep(1)
 
 
 
