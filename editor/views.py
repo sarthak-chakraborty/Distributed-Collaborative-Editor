@@ -66,12 +66,12 @@ def crash_detect():
 				for u in REPLICA_URLS:
 					url = u+'/api/change_status/'
 					payload = {
-						'index': i
+						'index': i,
 						'status': 'crash'		## one of ['alive','crash']
 					}
 					requests.post(url,payload)
 
-				if CURRENT_PRIMARY = i:
+				if CURRENT_PRIMARY == i:
 					print('failed node is primary')
 					done = False
 					while not done:
@@ -461,7 +461,7 @@ def heartbeat_recv(request):
 		if request.method == 'POST':
 			# sender = json.loads(request.POST['sender'])
 			sender = request.POST['sender']
-			HB_TIMES[sender] = time.time()
+			HB_TIMES[int(sender)] = time.time()
 			print('hb received from {}'.format(sender))
 		return JsonResponse({'ok':'ok'})
 
