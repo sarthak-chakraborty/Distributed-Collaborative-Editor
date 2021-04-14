@@ -14,16 +14,16 @@ import requests
 import time
 import threading
 
-STATE = 'primary'		# one of ['primary', 'secondary', 'recovering', 'master']
+STATE = 'primary'		# one of ['primary', 'secondary', 'recovering']
 INDEX = 0 				# Index of the current replica - not applicable to master
-MASTER_URL = 'http://127.0.0.1:8000'		# The master server
-SELF_URL = 'http://127.0.0.1:8001'
+MASTER_URL = 'http://127.0.0.1:8001'		# The master server
+SELF_URL = 'http://127.0.0.1:8002'
 REPLICA_URLS = [							# All replica urls
-	'http://127.0.0.1:8001',
-	'http://127.0.0.1:8002'
+	'http://127.0.0.1:8002',
+	'http://127.0.0.1:8003'
 	# 'http://127.0.0.1:8003' # Add this if we need 3 servers
 ]
-ALIVE_STATUS = [True,True,True]				# Used by master
+
 CURRENT_PRIMARY = 0							# Index of current primary
 
 HEARTBEAT_TIMEOUT = 1						# Time between consequitive heartbeats
@@ -57,37 +57,6 @@ if STATE in ['primary','secondary']:
 	sec_hb = threading.Thread(target = heartbeat_sender)
 	sec_hb.start()
 
-def crash_detect():
-	while(1):
-		for i in range(len(HB_TIMES)):
-			if ALIVE_STATUS[i] and time.time() - HB_TIMES[i] > HEARTBEAT_MISS_TIMEOUT:
-				print('Detected crash. Server {} failed to send heartbeat 3 times'.format(i))
-				ALIVE_STATUS[i] = False
-				for u in REPLICA_URLS:
-					url = u+'/api/change_status/'
-					payload = {
-						'index': i,
-						'status': 'crash'		## one of ['alive','crash']
-					}
-					requests.post(url,payload)
-
-				if CURRENT_PRIMARY == i:
-					print('failed node is primary')
-					done = False
-					while not done:
-						previous_primary = CURRENT_PRIMARY
-						CURRENT_PRIMARY = (i+1)%len(REPLICA_URLS)
-						requests.get(REPLICA_URLS[previous_primary]+'/api/become_secondary/')
-						r = requests.get(REPLICA_URLS[CURRENT_PRIMARY]+'/api/become_primary/')
-						if r.ok:
-							done = True
-					print('New primary is {}'.format(CURRENT_PRIMARY))
-					# Should we send info to the others about who is the new primary? 
-
-if STATE == 'master':
-	master_crash = threading.Thread(target=crash_detect)
-	master_crash.start()
-
 				
 
 def _doc_get_or_create(eid):
@@ -101,21 +70,9 @@ def _doc_get_or_create(eid):
 			doc = Document.objects.get(eid=eid)
 	return doc
 
+
 def index(request, document_id=None):
-	if STATE == 'master':
-		if document_id is None:
-			url = REPLICA_URLS[CURRENT_PRIMARY]+'/'
-		else:
-			url = REPLICA_URLS[CURRENT_PRIMARY]+'/{}/'.format(document_id)
-		if request.method == 'GET':
-			payload = request.GET.dict()
-			response = requests.get(url,payload)
-		elif request.method == 'POST':
-			payload = request.POST.dict()
-			response = requests.post(url,payload)
-		return response		
-			
-	elif STATE == 'primary':
+	if STATE == 'primary':	
 		if not document_id:
 			document_id = 'default'
 
@@ -143,17 +100,9 @@ def index(request, document_id=None):
 		resp['Cache-Control'] = 'no-store, must-revalidate'
 		return resp
 
+
 def users(request):
-	if STATE == 'master':
-		url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/users/'
-		if request.method == 'GET':
-			payload = request.GET.dict()
-			response = requests.get(url,payload)
-		elif request.method == 'POST':
-			payload = request.POST.dict()
-			response = requests.post(url,payload)
-		return response		
-	elif STATE == 'primary':
+	if STATE == 'primary':
 		if request.method == 'POST':
 			name = request.POST['name']
 			try:
@@ -168,34 +117,18 @@ def users(request):
 		else:
 			return HttpResponseNotAllowed(['POST'])
 
+
 def user(request, user_id):
-	if STATE == 'master':
-		url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/users/{}/'.format(user_id)
-		if request.method == 'GET':
-			payload = request.GET.dict()
-			response = requests.get(url,payload)
-		elif request.method == 'POST':
-			payload = request.POST.dict()
-			response = requests.post(url,payload)
-		return response		
-	elif STATE == 'primary':
+	if STATE == 'primary':
 		if request.method == 'GET':
 			user = get_object_or_404(User, id=user_id)
 			return JsonResponse(user.export())
 		else:
 			return HttpResponseNotAllowed(['GET'])
 
+
 def document(request, document_id):
-	if STATE == 'master':
-		url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/'.format(document_id)
-		if request.method == 'GET':
-			payload = request.GET.dict()
-			response = requests.get(url,payload)
-		elif request.method == 'POST':
-			payload = request.POST.dict()
-			response = requests.post(url,payload)
-		return response		
-	elif STATE == 'primary':
+	if STATE == 'primary':
 		if request.method == 'GET':
 			try:
 				doc = Document.objects.get(eid=document_id)
@@ -207,18 +140,9 @@ def document(request, document_id):
 		else:
 			return HttpResponseNotAllowed(['GET'])
 
-def document_changes(request, document_id):
-	if STATE == 'master':
-		url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/changes/'.format(document_id)
-		if request.method == 'GET':
-			payload = request.GET.dict()
-			response = requests.get(url,payload)
-		elif request.method == 'POST':
-			payload = request.POST.dict()
-			response = requests.post(url,payload)
-		return response		
 
-	elif STATE == 'primary':
+def document_changes(request, document_id):
+	if STATE == 'primary':
 		gchannel = 'document-{}'.format(document_id)
 
 		if request.method == 'GET':
@@ -350,7 +274,6 @@ def document_changes(request, document_id):
 					saved = True
 
 			if saved:
-
 				"""
 				1. Send c to secondary (diff url) [ATOMIC MULTICAST]
 				2. receive acks
@@ -455,15 +378,6 @@ diff URL for heartbeat to know whether the primary is alive or not
 if not, elect primary
 """
 
-def heartbeat_recv(request):
-	## use sender details
-	if STATE == 'master':
-		if request.method == 'POST':
-			# sender = json.loads(request.POST['sender'])
-			sender = request.POST['sender']
-			HB_TIMES[int(sender)] = time.time()
-			print('hb received from {}'.format(sender))
-		return JsonResponse({'ok':'ok'})
 
 def change_status(request):
 	if STATE in ['primary', 'secondary']:
