@@ -9,27 +9,28 @@ from django.urls import reverse
 from gripcontrol import Channel, HttpStreamFormat
 from django_grip import publish
 from .text_operation import TextOperation
-from .models import User, Document, DocumentChange
+from .models import Document, DocumentChange
 import requests
 import time
 import threading
 
+		# one of ['primary', 'secondary', 'recovering', 'master']
+INDEX = 0 				# Index of the current replica - not applicable to master
 STATE = 'master'
-INDEX = 0 
-MASTER_URL = 'http://127.0.0.1:8001'		# The master server
+MASTER_URL = 'http://127.0.0.1:8000'		# The master server
+SELF_URL = 'http://127.0.0.1:8000'
 REPLICA_URLS = [							# All replica urls
-	'http://127.0.0.1:8002',
-	'http://127.0.0.1:8003'
+	'http://127.0.0.1:8001',
+	'http://127.0.0.1:8002'
 	# 'http://127.0.0.1:8003' # Add this if we need 3 servers
 ]
 ALIVE_STATUS = [True,True,True]				# Used by master
-CURRENT_PRIMARY = 0							# Index of current primary
+CURRENT_PRIMARY = 1							# Index of current primary
 IS_SOME_PRIMARY = 1
 HEARTBEAT_TIMEOUT = 1						# Time between consequitive heartbeats
 HEARTBEAT_MISS_TIMEOUT = 3*HEARTBEAT_TIMEOUT	# Time after which missing heartbeats is considered failure
 safe_to_send_new_lease=1
 last_heard_from_secondary=time.time()
-
 HB_TIMES = [								# Time when last heartbeat received from replica. 
 	time.time(),
 	time.time()
@@ -39,8 +40,8 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 LEASE_TIMEOUT=15
 Lease_begin_time=time.time()
 Lease_sent_time=time.time()
-
 def heartbeat_sender():
+	print "in HB sender"
 	global STATE
 	global IS_SOME_PRIMARY
 	global Lease_sent_time
@@ -50,19 +51,45 @@ def heartbeat_sender():
 	global safe_to_send_new_lease
 	global CURRENT_PRIMARY
 	while(1):
+		if STATE=='primary' or STATE=='secondary':
+			time.sleep(HEARTBEAT_TIMEOUT)
+			print('IN background runner')
+			payload = {
+				'type': 'HB',
+				'sender': INDEX,
+				'sender_state': STATE
+			}
+			r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+			print(r2.reason)
+			# print(r2.text)
+			if r2.ok:
+				print "Heartbeat successfully sent by me i.e ", INDEX
+			else:
+				print('Error in sending hb')
+		else:
+			print "I am the master, i don't send shit"
+			
+
 		if time.time()-Lease_sent_time >= LEASE_TIMEOUT and STATE=='master':
-			print("Primary's lease has expired")
+			print "Primary's lease has expired"
 			ALIVE_STATUS[CURRENT_PRIMARY]=False
 			# STATE='secondary'
 			IS_SOME_PRIMARY=0
 
+		if time.time()-Lease_begin_time >= LEASE_TIMEOUT and STATE=='primary':
+			print "My lease has now expired"
+			# ALIVE_STATUS[CURRENT_PRIMARY]=False
+			STATE='secondary'
+			# IS_SOME_PRIMARY=0
+		
 		if time.time()-last_heard_from_secondary>= LEASE_TIMEOUT-1 and STATE=='master':
-			print("secondary may be dead")
+			print "secondary may be dead"
 			ALIVE_STATUS[3-CURRENT_PRIMARY]=False
+
 
 		if IS_SOME_PRIMARY == 0 and STATE=='master':
 			if ALIVE_STATUS[3-CURRENT_PRIMARY]==True:
-				print("Trying to switch primary to {}".format(3-CURRENT_PRIMARY))
+				print "Trying to switch primary to ", 3-CURRENT_PRIMARY
 				payload = {
 					'type': 'become_primary',
 					'sender': INDEX,
@@ -72,49 +99,37 @@ def heartbeat_sender():
 				print(r2.reason)
 				# print(r2.text)
 				if r2.ok:
-					print("Become primary request successfully sent by me i.e {}".format(INDEX))
+					print "Become primary request successfully sent by me i.e ", INDEX
 				else:
 					print('Error in sending become primary')
 		time.sleep(1)
 
-sec_hb = threading.Thread(target = heartbeat_sender)
-sec_hb.start()
 
-'''
+# if STATE in ['primary','secondary','master']:
+sep = threading.Thread(target = heartbeat_sender)
+sep.start()
+
 def crash_detect():
-	global CURRENT_PRIMARY
 	while(1):
 		for i in range(len(HB_TIMES)):
 			if ALIVE_STATUS[i] and time.time() - HB_TIMES[i] > HEARTBEAT_MISS_TIMEOUT:
-				print('Detected crash. Server {} failed to send heartbeat 3 times'.format(i))
 				ALIVE_STATUS[i] = False
-				for u in REPLICA_URLS:
-					url = u+'/api/change_status/'
-					payload = {
-						'index': i,
-						'status': 'crash'		## one of ['alive','crash']
-					}
-					requests.post(url,payload)
-
+				print "looks like ", i, "has failed! Tis a shame."
 				if CURRENT_PRIMARY == i:
-					print('failed node is primary')
-					done = False
-					while not done:
-						previous_primary = CURRENT_PRIMARY
-						CURRENT_PRIMARY = (i+1)%len(REPLICA_URLS)
-						requests.get(REPLICA_URLS[previous_primary]+'/api/become_secondary/')
-						r = requests.get(REPLICA_URLS[CURRENT_PRIMARY]+'/api/become_primary/')
-						if r.ok:
-							done = True
-					print('New primary is {}'.format(CURRENT_PRIMARY))
-					# Should we send info to the others about who is the new primary? 
-
-master_crash = threading.Thread(target=crash_detect)
-master_crash.start()
-'''
-				
+					previous_primary = i
+					CURRENT_PRIMARY = (i+1)%len(REPLICA_URLS)
+					requests.get(REPLICA_URLS[CURRENT_PRIMARY]+'/api/become_primary/')
+					requests.get(REPLICA_URLS[previous_primary]+'/api/become_secondary/')
 
 def _doc_get_or_create(eid):
+	global STATE
+	global IS_SOME_PRIMARY
+	global Lease_sent_time
+	global Lease_begin_time
+	global ALIVE_STATUS
+	global last_heard_from_secondary
+	global safe_to_send_new_lease
+	global CURRENT_PRIMARY
 	try:
 		doc = Document.objects.get(eid=eid)
 	except Document.DoesNotExist:
@@ -125,103 +140,376 @@ def _doc_get_or_create(eid):
 			doc = Document.objects.get(eid=eid)
 	return doc
 
-
 def index(request, document_id=None):
-	print(document_id)
-	if document_id is None:
-		url = REPLICA_URLS[CURRENT_PRIMARY]+'/'
-	else:
-		url = REPLICA_URLS[CURRENT_PRIMARY]+'/{}/'.format(document_id)
+	global STATE
+	global IS_SOME_PRIMARY
+	global Lease_sent_time
+	global Lease_begin_time
+	global ALIVE_STATUS
+	global last_heard_from_secondary
+	global safe_to_send_new_lease
+	global CURRENT_PRIMARY
+	# if STATE == 'master':
+	# 	if document_id is None:
+	# 		url = REPLICA_URLS[CURRENT_PRIMARY]+'/'
+	# 	else:
+	# 		url = REPLICA_URLS[CURRENT_PRIMARY]+'/{}/'.format(document_id)
+	# 	if request.method == 'GET':
+	# 		payload = request.GET.dict()
+	# 		response = requests.get(url,payload)
+	# 	elif request.method == 'POST':
+	# 		payload = request.POST.dict()
+	# 		response = requests.post(url,payload)
+	# 	return response		
+			
+	if STATE == 'master' or STATE == 'primary' or STATE == 'secondary':
+		if not document_id:
+			document_id = 'default'
 
-	print(url)
-	if request.method == 'GET':
-		payload = request.GET.dict()
-		response = HttpResponse(requests.get(url, payload).text)
-		# context = json.loads(response.text)
-		# response = render(request, 'editor/index.html', context)
-		# response['Cache-Control'] = 'no-store, must-revalidate'
-		
-	elif request.method == 'POST':
-		payload = request.POST.dict()
-		response = HttpResponse(requests.post(url, payload).text)
-	return response		
-		
+		base_url = '{}://{}{}'.format(
+			'https' if request.is_secure() else 'http',
+			request.META.get('HTTP_HOST') or 'localhost',
+			reverse('index-default'))
+		if base_url.endswith('/'):
+			base_url = base_url[:-1]
+
+		try:
+			doc = Document.objects.get(eid=document_id)
+		except Document.DoesNotExist:
+			doc = Document(eid=document_id)
+
+		context = {
+			'document_id': document_id,
+			'document_title': doc.title,
+			'document_content': doc.content,
+			'document_version': doc.version,
+			'base_url': base_url
+		}
+
+		resp = render(request, 'editor/index.html', context)
+		resp['Cache-Control'] = 'no-store, must-revalidate'
+		return resp
 
 def users(request):
-	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/users/'
-	if request.method == 'GET':
-		payload = request.GET.dict()
-		response = requests.get(url,payload)
-	elif request.method == 'POST':
-		payload = request.POST.dict()
-		response = requests.post(url,payload)
-	return response		
-
+	if STATE == 'master':
+		url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/users/'
+		if request.method == 'GET':
+			payload = request.GET.dict()
+			response = requests.get(url,payload)
+		elif request.method == 'POST':
+			payload = request.POST.dict()
+			response = requests.post(url,payload)
+		return response		
+	elif STATE == 'primary':
+		if request.method == 'POST':
+			name = request.POST['name']
+			try:
+				user = User.objects.get(name=name)
+			except User.DoesNotExist:
+				try:
+					user = User(name=name)
+					user.save()
+				except IntegrityError:
+					user = User.objects.get(name=name)
+			return JsonResponse(user.export())
+		else:
+			return HttpResponseNotAllowed(['POST'])
 
 def user(request, user_id):
-	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/users/{}/'.format(user_id)
-	if request.method == 'GET':
-		payload = request.GET.dict()
-		response = requests.get(url,payload)
-	elif request.method == 'POST':
-		payload = request.POST.dict()
-		response = requests.post(url,payload)
-	return response		
-
+	if STATE == 'master':
+		url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/users/{}/'.format(user_id)
+		if request.method == 'GET':
+			payload = request.GET.dict()
+			response = requests.get(url,payload)
+		elif request.method == 'POST':
+			payload = request.POST.dict()
+			response = requests.post(url,payload)
+		return response		
+	elif STATE == 'primary':
+		if request.method == 'GET':
+			user = get_object_or_404(User, id=user_id)
+			return JsonResponse(user.export())
+		else:
+			return HttpResponseNotAllowed(['GET'])
 
 def document(request, document_id):
-	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/'.format(document_id)
-	if request.method == 'GET':
-		payload = request.GET.dict()
-		response = requests.get(url,payload)
-	elif request.method == 'POST':
-		payload = request.POST.dict()
-		response = requests.post(url,payload)
-	return response		
-
+	global STATE
+	global IS_SOME_PRIMARY
+	global Lease_sent_time
+	global Lease_begin_time
+	global ALIVE_STATUS
+	global last_heard_from_secondary
+	global safe_to_send_new_lease
+	global CURRENT_PRIMARY
+	# if STATE == 'master':
+	# 	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/'.format(document_id)
+	# 	if request.method == 'GET':
+	# 		payload = request.GET.dict()
+	# 		response = requests.get(url,payload)
+	# 	elif request.method == 'POST':
+	# 		payload = request.POST.dict()
+	# 		response = requests.post(url,payload)
+	# 	return response		
+	if STATE == 'primary' or STATE=='master' or STATE=='secondary':
+		if request.method == 'GET':
+			try:
+				doc = Document.objects.get(eid=document_id)
+			except Document.DoesNotExist:
+				doc = Document(eid=document_id)
+			resp = JsonResponse(doc.export())
+			resp['Cache-Control'] = 'no-store, must-revalidate'
+			return resp
+		else:
+			return HttpResponseNotAllowed(['GET'])
 
 def document_changes(request, document_id):
-	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/changes/'.format(document_id)
+	global STATE
+	global IS_SOME_PRIMARY
+	global Lease_sent_time
+	global Lease_begin_time
+	global ALIVE_STATUS
+	global last_heard_from_secondary
+	global safe_to_send_new_lease
+	global CURRENT_PRIMARY
+	# if STATE == 'master':
+	# 	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/changes/'.format(document_id)
+	# 	if request.method == 'GET':
+	# 		payload = request.GET.dict()
+	# 		response = requests.get(url,payload)
+	# 	elif request.method == 'POST':
+	# 		payload = request.POST.dict()
+	# 		response = requests.post(url,payload)
+	# 	return response		
+
+	gchannel = 'document-{}'.format(document_id)
+
 	if request.method == 'GET':
-		payload = request.GET.dict()
-		response = requests.get(url, payload)
-
-		resp_content = json.loads(response.text)
-		if "success" in resp_content:
-			if resp_content["success"]:
-				response = HttpResponse(resp_content['body'], content_type='text/event-stream')
-				parsed = urlparse(reverse('document-changes', args=[document_id]))
-				instruct = request.grip.start_instruct()
-				instruct.set_next_link('{}?link=true&after={}'.format(parsed.path, resp_content['last_version']))
-				if len(resp_content['out']) < 50:
-					instruct.set_hold_stream()
-					instruct.add_channel(Channel(resp_content['gchannel'], prev_id=str(resp_content['last_version'])))
-					instruct.set_keep_alive('event: keep-alive\ndata:\n\n; format=cstring', 20)
+		link = False
+		sse = False
+		if request.GET.get('link') == 'true':
+			link = True
+			sse = True
 		else:
-			response = HttpResponseNotFound('version in the future')
+			accept = request.META.get('HTTP_ACCEPT')
+			if accept and accept.find('text/event-stream') != -1:
+				sse = True
 
-	elif request.method == 'POST':
-		payload = request.POST.dict()
-		response = requests.post(url, payload)
+		after = None
 
-		if response.status_code == 200:
-			resp_content = json.loads(response.text)
-			if "success" in resp_content:
-				if resp_content["success"]:
-					publish(
-						resp_content['gchannel'],
-						HttpStreamFormat(resp_content['event']),
-						id=str(resp_content['c.version']),
-						prev_id=str(resp_content['c.version - 1']))
+		last_id = request.grip.last.get(gchannel)
+		if last_id:
+			after = int(last_id)
 
-				response = JsonResponse({'version': resp_content['version']})
+		if after is None and sse:
+			last_id = request.META.get('Last-Event-ID')
+			if last_id:
+				after = int(last_id)
 
-		elif response.status_code == 500:
-			response = HttpResponseBadRequest(response.text)
+		if after is None and sse:
+			last_id = request.GET.get('lastEventId')
+			if last_id:
+				after = int(last_id)
+
+		if after is None:
+			afterstr = request.GET.get('after')
+			if afterstr:
+				after = int(afterstr)
+
+		try:
+			doc = Document.objects.get(eid=document_id)
+			if after is not None:
+				if after > doc.version:
+					return HttpResponseNotFound('version in the future')
+				changes = DocumentChange.objects.filter(
+					document=doc,
+					version__gt=after).order_by('version')[:50]
+				out = [c.export() for c in changes]
+				if len(out) > 0:
+					last_version = out[-1]['version']
+				else:
+					last_version = after
+			else:
+				out = []
+				last_version = doc.version
+		except Document.DoesNotExist:
+			if after is not None and after > 0:
+				return HttpResponseNotFound('version in the future')
+			out = []
+			last_version = 0
+
+		if sse:
+			body = ''
+			if not link:
+				body += 'event: opened\ndata:\n\n'
+			for i in out:
+				event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
+					i['version'], json.dumps(i))
+				body += event
+			resp = HttpResponse(body, content_type='text/event-stream')
+			parsed = urlparse(reverse('document-changes', args=[document_id]))
+			instruct = request.grip.start_instruct()
+			instruct.set_next_link('{}?link=true&after={}'.format(
+				parsed.path, last_version))
+			if len(out) < 50:
+				instruct.set_hold_stream()
+				instruct.add_channel(Channel(gchannel, prev_id=str(last_version)))
+				instruct.set_keep_alive('event: keep-alive\ndata:\n\n; format=cstring', 20)
+			return resp
 		else:
-			response = HttpResponseNotFound('invalid')
+			return JsonResponse({'changes': out})
+	
+	if request.method == 'POST' and (STATE=='master' or STATE == 'primary'):
+		opdata = json.loads(request.POST['op'])
+		print "Sending ", opdata, "to other servers"
+		for i in opdata:
+			if not isinstance(i, int) and not isinstance(i, basestring):
+				return HttpResponseBadRequest('invalid operation');
 
-	return response		
+		op = TextOperation(opdata)
+
+		request_id = request.POST['request-id']
+		parent_version = int(request.POST['parent-version'])
+		doc = _doc_get_or_create(document_id)
+
+		saved = False
+		with transaction.atomic():
+			doc = Document.objects.select_for_update().get(id=doc.id)
+			try:
+				# already submitted?
+				c = DocumentChange.objects.get(
+					document=doc,
+					request_id=request_id,
+					parent_version=parent_version)
+			except DocumentChange.DoesNotExist:
+				changes_since = DocumentChange.objects.filter(
+					document=doc,
+					version__gt=parent_version,
+					version__lte=doc.version).order_by('version')
+
+				for c in changes_since:
+					op2 = TextOperation(json.loads(c.data))
+					try:
+						op, _ = TextOperation.transform(op, op2)
+					except:
+						return HttpResponseBadRequest(
+							'unable to transform against version {}'.format(c.version))
+
+				try:
+					doc.content = op(doc.content)
+				except:
+					return HttpResponseBadRequest(
+						'unable to apply {} to version {}'.format(
+						json.dumps(op.ops), doc.version))
+
+				next_version = doc.version + 1
+				c = DocumentChange(
+					document=doc,
+					version=next_version,
+					request_id=request_id,
+					parent_version=parent_version,
+					data=json.dumps(op.ops))
+				c.save()
+				doc.version = next_version
+				doc.save()
+				saved = True
+
+		if saved:
+
+			"""
+			1. Send c to secondary (diff url) [ATOMIC MULTICAST]
+			2. receive acks
+			"""
+			payload = {
+				'request-id':request_id, 
+				'parent-version': parent_version, 
+				'data':json.dumps(op.ops)}
+			print "getting ready to send now"
+			response_statuses = []
+			for i in range(len(REPLICA_URLS)):
+				if REPLICA_URLS[i] == SELF_URL:
+					continue
+				if ALIVE_STATUS[i]:
+					print "As ",i," is alive, sending to it"
+					r = requests.post(REPLICA_URLS[i]+'/api/documents/{}/changes/'.format(document_id), data = payload)
+					if r.ok:
+						response_statuses.append(True)
+					else:
+						response_statuses.append(False)
+						break
+
+			if all(response_statuses):
+				print "all responses found to be True"
+				event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
+					c.version, json.dumps(c.export()))
+				publish(
+					gchannel,
+					HttpStreamFormat(event),
+					id=str(c.version),
+					prev_id=str(c.version - 1))
+			else:
+				with transaction.atomic():
+					c.delete()
+					old_version = doc.version - 1
+					doc.version = old_version
+					doc.save()
+				return HttpResponseBadRequest(
+						'Error in sending data to replica')
+
+		return JsonResponse({'version': c.version})
+	
+	if request.method == 'POST' and (STATE == 'secondary' or STATE == 'primary' or STATE=='master'):
+		if request.method == 'POST':
+			print "Received at me"
+			opdata = json.loads(request.POST['data'])
+			op = TextOperation(opdata)
+			request_id = request.POST['request-id']
+			parent_version = int(request.POST['parent-version'])
+			doc = _doc_get_or_create(document_id)
+			with transaction.atomic():
+				doc = Document.objects.select_for_update().get(id=doc.id)
+				try:
+					c = DocumentChange.objects.get(
+						document=doc,
+						request_id=request_id,
+						parent_version=parent_version)
+					print("Document change already exists!")
+				except DocumentChange.DoesNotExist:
+
+					## Is it needed?
+					changes_since = DocumentChange.objects.filter(
+						document=doc,
+						version__gt=parent_version,
+						version__lte=doc.version).order_by('version')
+
+					for c in changes_since:
+						op2 = TextOperation(json.loads(c.data))
+						try:
+							op, _ = TextOperation.transform(op, op2)
+						except Exception as e:
+							print(e)
+							return HttpResponseBadRequest(
+								'unable to transform against version {}'.format(c.version))
+
+					try:
+						doc.content = op(doc.content)
+					except Exception as e:
+						print(e)
+						return HttpResponseBadRequest("Unable to apply change in secondary database")
+					
+					next_version = doc.version + 1
+					c = DocumentChange(
+						document=doc,
+						version=next_version,
+						request_id=request_id,
+						parent_version=parent_version,
+						data=json.dumps(op.ops))
+					c.save()
+					doc.version = next_version
+					doc.save()
+			return JsonResponse({'ok':'ok'})
+
+	else:
+		return HttpResponseNotAllowed(['GET', 'POST'])
 
 
 def heartbeat_recv(request):
@@ -235,16 +523,10 @@ def heartbeat_recv(request):
 	global last_heard_from_secondary
 	global safe_to_send_new_lease
 	global CURRENT_PRIMARY
-
-	# if request.method == 'POST':
-	# 	# sender = json.loads(request.POST['sender'])
-	# 	sender = request.POST['sender']
-	# 	HB_TIMES[int(sender)] = time.time()
-	# 	print('hb received from {}'.format(sender))
-	# return JsonResponse({'ok':'ok'})
-
 	if request.method == 'POST':
+		# sender = json.loads(request.POST['sender'])
 		sender = int(request.POST['sender'])
+		ALIVE_STATUS[sender]=True
 		if sender == 'secondary':
 			ls1hbr = time.time()
 		print "hb received at myself (",STATE,") from ", sender
@@ -253,6 +535,22 @@ def heartbeat_recv(request):
 		print "STATE=='master' ", STATE=='master'
 		print "sender==CURRENT_PRIMARY ", sender==CURRENT_PRIMARY
 		print "STATE=='master' and sender==CURRENT_PRIMARY ", STATE=='master' and sender==CURRENT_PRIMARY
+		if STATE=='primary' and sender==0 and request.POST['type']=='lease_extend':
+			print "Have received a lease extend"
+			Lease_begin_time=time.time()
+			payload = {
+				'type': 'lease_extend_ack',
+				'sender': INDEX,
+				'sender_state': STATE
+			}
+			Lease_begin_time=time.time()
+			r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+			print(r2.reason)
+			# print(r2.text)
+			if r2.ok:
+				print "Lease extend ACK successfully sent by me i.e ", INDEX
+			else:
+				print('Error in sending lease extend ACK')
 
 		if STATE=='master' and request.POST['type']=='lease_extend_ack':
 			print "received lease_extend_ack"
@@ -282,7 +580,24 @@ def heartbeat_recv(request):
 
 		if STATE=='master' and sender==3-CURRENT_PRIMARY:
 			last_heard_from_secondary=time.time()
+				
+
 
 	return JsonResponse({'ok':'ok'})
 
-		
+def become_primary(request):
+	global STATE
+	global IS_SOME_PRIMARY
+	global Lease_sent_time
+	global Lease_begin_time
+	global ALIVE_STATUS
+	global last_heard_from_secondary
+	global safe_to_send_new_lease
+	global CURRENT_PRIMARY
+	if request.method=='POST':
+		if int(request.POST['sender'])==0:
+			STATE='primary'
+	return JsonResponse({'ok':'ok'})
+
+def become_secondary():
+	pass
