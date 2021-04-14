@@ -25,9 +25,11 @@ REPLICA_URLS = [							# All replica urls
 ]
 ALIVE_STATUS = [True,True,True]				# Used by master
 CURRENT_PRIMARY = 0							# Index of current primary
-
+IS_SOME_PRIMARY = 1
 HEARTBEAT_TIMEOUT = 1						# Time between consequitive heartbeats
 HEARTBEAT_MISS_TIMEOUT = 3*HEARTBEAT_TIMEOUT	# Time after which missing heartbeats is considered failure
+safe_to_send_new_lease=1
+last_heard_from_secondary=time.time()
 
 HB_TIMES = [								# Time when last heartbeat received from replica. 
 	time.time(),
@@ -35,28 +37,38 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 	# time.time()	# Add this if we need 3 servers
 ]	
 
-def heartbeat_sender():
-	if STATE in ['primary','secondary']:
-		while(1):
-			time.sleep(HEARTBEAT_TIMEOUT)
-			print('IN background runner')
-			payload = {
-				'type': 'HB',
-				'sender': INDEX,
-				'sender_state': STATE
-			}
-			r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
-			print(r2.reason)
-			# print(r2.text)
-			if r2.ok:
-				print('Heartbeat successfully sent')
-			else:
-				print('Error in sending hb')
+LEASE_TIMEOUT=15
+Lease_begin_time=time.time()
+Lease_sent_time=time.time()	
 
-if STATE in ['primary','secondary']:
-	sec_hb = threading.Thread(target = heartbeat_sender)
-	sec_hb.start()
-				
+def heartbeat_sender():
+		while(1):
+			if STATE in ['primary','secondary']:
+				time.sleep(HEARTBEAT_TIMEOUT)
+				print('IN background runner')
+				payload = {
+					'type': 'HB',
+					'sender': INDEX,
+					'sender_state': STATE
+				}
+				r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+				print(r2.reason)
+				# print(r2.text)
+				if r2.ok:
+					print('Heartbeat successfully sent')
+				else:
+					print('Error in sending hb')
+
+			if time.time()-Lease_begin_time >= LEASE_TIMEOUT and STATE=='primary':
+				print("My lease has now expired")
+				# ALIVE_STATUS[CURRENT_PRIMARY]=False
+				STATE='secondary'
+				# IS_SOME_PRIMARY=0
+
+
+sec_hb = threading.Thread(target = heartbeat_sender)
+sec_hb.start()
+			
 
 def _doc_get_or_create(eid):
 	try:
@@ -397,6 +409,46 @@ diff URL for heartbeat to know whether the primary is alive or not
 if not, elect primary
 """
 
+def heartbeat_recv(request):
+	## use sender details
+
+	global STATE
+	global IS_SOME_PRIMARY
+	global Lease_sent_time
+	global Lease_begin_time
+	global ALIVE_STATUS
+	global last_heard_from_secondary
+	global safe_to_send_new_lease
+	global CURRENT_PRIMARY
+
+	if request.method == 'POST':
+		# sender = json.loads(request.POST['sender'])
+		sender = int(request.POST['sender'])
+		if sender == 'secondary':
+			ls1hbr = time.time()
+		print "hb received at myself (",STATE,") from ", sender
+		time.sleep(0.5)
+		print "current primary is ", CURRENT_PRIMARY
+		print "STATE=='master' ", STATE=='master'
+		print "sender==CURRENT_PRIMARY ", sender==CURRENT_PRIMARY
+		print "STATE=='master' and sender==CURRENT_PRIMARY ", STATE=='master' and sender==CURRENT_PRIMARY
+		if STATE=='primary' and sender==0 and request.POST['type']=='lease_extend':
+			print "Have received a lease extend"
+			Lease_begin_time=time.time()
+			payload = {
+				'type': 'lease_extend_ack',
+				'sender': INDEX,
+				'sender_state': STATE
+			}
+			Lease_begin_time=time.time()
+			r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+			print(r2.reason)
+			# print(r2.text)
+			if r2.ok:
+				print "Lease extend ACK successfully sent by me i.e ", INDEX
+			else:
+				print('Error in sending lease extend ACK')
+
 
 def change_status(request):
 	if STATE in ['primary', 'secondary']:
@@ -408,13 +460,23 @@ def change_status(request):
 			ALIVE_STATUS[index] = True
 	return JsonResponse({'ok':'ok'})
 
-def become_primary(request):
-	if STATE == 'secondary':
-		STATE = 'primary'
-	return JsonResponse({'ok':'ok'})
 
-def become_secondary(request):
-	if STATE == 'primary':
-		STATE = 'secondary'
-	return JsonResponse({'ok':'ok'})
+def become_primary(request):
+	if request.method==POST:
+		if int(request.POST['sender'])==0:
+			STATE='primary'
+
+
+def become_secondary():
+	pass
+
+# def become_primary(request):
+# 	if STATE == 'secondary':
+# 		STATE = 'primary'
+# 	return JsonResponse({'ok':'ok'})
+
+# def become_secondary(request):
+# 	if STATE == 'primary':
+# 		STATE = 'secondary'
+# 	return JsonResponse({'ok':'ok'})
 		
