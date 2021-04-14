@@ -104,7 +104,9 @@ def index(request, document_id=None):
 		# resp = render(request, 'editor/index.html', context)
 		# resp['Cache-Control'] = 'no-store, must-revalidate'
 		# return resp
-		return JsonResponse(context)
+		resp = JsonResponse(context)
+		resp['Cache-Control'] = 'no-store, must-revalidate'
+		return resp
 
 
 def users(request):
@@ -213,16 +215,25 @@ def document_changes(request, document_id):
 					event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
 						i['version'], json.dumps(i))
 					body += event
-				resp = HttpResponse(body, content_type='text/event-stream')
-				parsed = urlparse(reverse('document-changes', args=[document_id]))
-				instruct = request.grip.start_instruct()
-				instruct.set_next_link('{}?link=true&after={}'.format(
-					parsed.path, last_version))
-				if len(out) < 50:
-					instruct.set_hold_stream()
-					instruct.add_channel(Channel(gchannel, prev_id=str(last_version)))
-					instruct.set_keep_alive('event: keep-alive\ndata:\n\n; format=cstring', 20)
-				return resp
+
+
+				resp_content = {'body':body,
+							   'last_version':last_version,
+							   'out':out,
+							   'gchannel':gchannel}
+
+				return JsonResponse(resp_content)
+
+				# resp = HttpResponse(body, content_type='text/event-stream')
+				# parsed = urlparse(reverse('document-changes', args=[document_id]))
+				# instruct = request.grip.start_instruct()
+				# instruct.set_next_link('{}?link=true&after={}'.format(
+				# 	parsed.path, last_version))
+				# if len(out) < 50:
+				# 	instruct.set_hold_stream()
+				# 	instruct.add_channel(Channel(gchannel, prev_id=str(last_version)))
+				# 	instruct.set_keep_alive('event: keep-alive\ndata:\n\n; format=cstring', 20)
+				# return resp
 			else:
 				return JsonResponse({'changes': out})
 		elif request.method == 'POST':

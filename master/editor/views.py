@@ -137,10 +137,21 @@ def document_changes(request, document_id):
 	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/changes/'.format(document_id)
 	if request.method == 'GET':
 		payload = request.GET.dict()
-		response = requests.get(url,payload)
+		response = requests.get(url, payload)
+
+		resp_content = json.loads(response.text)
+		response = HttpResponse(resp_content['body'], content_type='text/event-stream')
+		parsed = urlparse(reverse('document-changes', args=[document_id]))
+		instruct = request.grip.start_instruct()
+		instruct.set_next_link('{}?link=true&after={}'.format(parsed.path, resp_content['last_version']))
+		if len(resp_content['out']) < 50:
+			instruct.set_hold_stream()
+			instruct.add_channel(Channel(resp_content['gchannel'], prev_id=str(resp_content['last_version'])))
+			instruct.set_keep_alive('event: keep-alive\ndata:\n\n; format=cstring', 20)
+
 	elif request.method == 'POST':
 		payload = request.POST.dict()
-		response = requests.post(url,payload)
+		response = requests.post(url, payload)
 	return response		
 
 
