@@ -153,6 +153,8 @@ def document_changes(request, document_id):
 					instruct.set_hold_stream()
 					instruct.add_channel(Channel(resp_content['gchannel'], prev_id=str(resp_content['last_version'])))
 					instruct.set_keep_alive('event: keep-alive\ndata:\n\n; format=cstring', 20)
+		else:
+			response = HttpResponseNotFound('version in the future')
 
 	elif request.method == 'POST':
 		payload = request.POST.dict()
