@@ -79,13 +79,21 @@ def _doc_get_or_create(eid):
 
 
 def index(request, document_id=None):
+	print(document_id)
 	if document_id is None:
 		url = REPLICA_URLS[CURRENT_PRIMARY]+'/'
 	else:
 		url = REPLICA_URLS[CURRENT_PRIMARY]+'/{}/'.format(document_id)
+
+	print(url)
 	if request.method == 'GET':
 		payload = request.GET.dict()
 		response = requests.get(url, payload)
+		context = json.loads(response.text)
+		print(context)
+		resp = render(request, 'editor/index.html', context)
+		resp['Cache-Control'] = 'no-store, must-revalidate'
+		return resp
 	elif request.method == 'POST':
 		payload = request.POST.dict()
 		response = requests.post(url, payload)
