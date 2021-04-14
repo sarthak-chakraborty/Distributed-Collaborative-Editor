@@ -57,6 +57,40 @@ if STATE in ['primary','secondary']:
 	sec_hb = threading.Thread(target = heartbeat_sender)
 	sec_hb.start()
 
+<<<<<<< HEAD:workers/editor/views.py
+=======
+def crash_detect():
+	while(1):
+		for i in range(len(HB_TIMES)):
+			if ALIVE_STATUS[i] and time.time() - HB_TIMES[i] > HEARTBEAT_MISS_TIMEOUT:
+				print('Detected crash. Server {} failed to send heartbeat 3 times'.format(i))
+				ALIVE_STATUS[i] = False
+				for u in REPLICA_URLS:
+					url = u+'/api/change_status/'
+					payload = {
+						'index': i
+						'status': 'crash'		## one of ['alive','crash']
+					}
+					requests.post(url,payload)
+
+				if CURRENT_PRIMARY = i:
+					print('failed node is primary')
+					done = False
+					while not done:
+						previous_primary = CURRENT_PRIMARY
+						CURRENT_PRIMARY = (i+1)%len(REPLICA_URLS)
+						requests.get(REPLICA_URLS[previous_primary]+'/api/become_secondary/')
+						r = requests.get(REPLICA_URLS[CURRENT_PRIMARY]+'/api/become_primary/')
+						if r.ok:
+							done = True
+					print('New primary is {}'.format(CURRENT_PRIMARY))
+					# Should we send info to the others about who is the new primary? 
+
+if STATE == 'master':
+	master_crash = threading.Thread(target=crash_detect)
+	master_crash.start()
+
+>>>>>>> parent of 3869921... Bug fixes:editor/views.py
 				
 
 def _doc_get_or_create(eid):
@@ -385,6 +419,18 @@ diff URL for heartbeat to know whether the primary is alive or not
 if not, elect primary
 """
 
+<<<<<<< HEAD:workers/editor/views.py
+=======
+def heartbeat_recv(request):
+	## use sender details
+	if STATE == 'master':
+		if request.method == 'POST':
+			# sender = json.loads(request.POST['sender'])
+			sender = request.POST['sender']
+			HB_TIMES[sender] = time.time()
+			print('hb received from {}'.format(sender))
+		return JsonResponse({'ok':'ok'})
+>>>>>>> parent of 3869921... Bug fixes:editor/views.py
 
 def change_status(request):
 	if STATE in ['primary', 'secondary']:

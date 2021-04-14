@@ -89,11 +89,11 @@ def index(request, document_id=None):
 	if request.method == 'GET':
 		payload = request.GET.dict()
 		response = requests.get(url, payload)
+
 		context = json.loads(response.text)
-		print(context)
-		resp = render(request, 'editor/index.html', context)
-		resp['Cache-Control'] = 'no-store, must-revalidate'
-		return resp
+		response = render(request, 'editor/index.html', context)
+		response['Cache-Control'] = 'no-store, must-revalidate'
+		
 	elif request.method == 'POST':
 		payload = request.POST.dict()
 		response = requests.post(url, payload)
