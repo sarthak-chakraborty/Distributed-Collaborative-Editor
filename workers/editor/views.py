@@ -304,7 +304,7 @@ def document_changes(request, document_id):
 					if REPLICA_URLS[i] == SELF_URL:
 						continue
 					if ALIVE_STATUS[i]:
-						r = requests.post(url+'/api/documents/{}/changes/'.format(document_id), data = payload)
+						r = requests.post(REPLICA_URLS[i]+'/api/documents/{}/changes/'.format(document_id), data = payload)
 						if r.ok:
 							response_statuses.append(True)
 						else:
