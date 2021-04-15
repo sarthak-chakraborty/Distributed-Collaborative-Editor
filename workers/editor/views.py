@@ -277,7 +277,8 @@ def document_changes(request, document_id):
 						except:
 							return HttpResponseBadRequest(
 								'unable to transform against version {}'.format(c.version))
-
+					
+					old_content = doc.content
 					try:
 						doc.content = op(doc.content)
 					except:
@@ -321,16 +322,17 @@ def document_changes(request, document_id):
 				if all(response_statuses):
 					event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
 						c.version, json.dumps(c.export()))
-					publish(
-						gchannel,
-						HttpStreamFormat(event),
-						id=str(c.version),
-						prev_id=str(c.version - 1))
+					resp_content = {'version':c.version,
+								'event':json.dumps(event),
+							   'gchannel':gchannel,
+							   'success':True}
+					return JsonResponse(resp_content)
 				else:
 					with transaction.atomic():
 						c.delete()
 						old_version = doc.version - 1
 						doc.version = old_version
+						doc.content = old_content
 						doc.save()
 					return HttpResponseBadRequest(
 							'Error in sending data to replica')

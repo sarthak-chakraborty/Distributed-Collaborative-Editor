@@ -165,16 +165,17 @@ def document_changes(request, document_id):
 	elif request.method == 'POST':
 		payload = request.POST.dict()
 		response = requests.post(url, payload)
-
+		print('\n\n-----',response,response.status_code,'\n\n')
 		if response.status_code == 200:
 			resp_content = json.loads(response.text)
+			print('resp',resp_content)
 			if "success" in resp_content:
 				if resp_content["success"]:
 					publish(
 						resp_content['gchannel'],
-						HttpStreamFormat(resp_content['event']),
-						id=str(resp_content['c.version']),
-						prev_id=str(resp_content['c.version - 1']))
+						HttpStreamFormat(json.loads(resp_content['event'])),
+						id=str(resp_content['version']),
+						prev_id=str(resp_content['version']-1))
 
 				response = JsonResponse({'version': resp_content['version']})
 
