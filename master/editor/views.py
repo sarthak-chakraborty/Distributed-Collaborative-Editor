@@ -191,9 +191,23 @@ def heartbeat_recv(request):
 	## use sender details
 	if request.method == 'POST':
 		# sender = json.loads(request.POST['sender'])
-		sender = request.POST['sender']
-		HB_TIMES[int(sender)] = time.time()
+		sender = int(request.POST['sender'])
+		HB_TIMES[sender] = time.time()
 		print('hb received from {}'.format(sender))
+		if(not ALIVE_STATUS[sender]):
+			ALIVE_STATUS[sender] = True
+			print('Server {} is up again'.format(sender))
+			for u in REPLICA_URLS:
+				url = u+'/api/change_status/'
+				payload = {
+					'index': sender,
+					'status': 'alive'		## one of ['alive','crash']
+				}
+				try:
+					requests.post(url,payload)
+				except:
+					pass
+			
 	return JsonResponse({'ok':'ok'})
 
 		
