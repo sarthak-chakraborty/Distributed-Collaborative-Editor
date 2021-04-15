@@ -97,6 +97,7 @@ def index(request, document_id=None):
 	print(url)
 	if request.method == 'GET':
 		payload = request.GET.dict()
+		payload['from-master'] = True
 		response = HttpResponse(requests.get(url, payload).text)
 
 		# context = json.loads(response.text)
@@ -146,6 +147,7 @@ def document_changes(request, document_id):
 	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/changes/'.format(document_id)
 	if request.method == 'GET':
 		payload = request.GET.dict()
+		payload['from-master'] = True
 		response = requests.get(url, payload)
 
 		resp_content = json.loads(response.text)
@@ -164,6 +166,7 @@ def document_changes(request, document_id):
 
 	elif request.method == 'POST':
 		payload = request.POST.dict()
+		payload['from-master'] = True
 		response = requests.post(url, payload)
 		print('\n\n-----',response,response.status_code,'\n\n')
 		if response.status_code == 200:

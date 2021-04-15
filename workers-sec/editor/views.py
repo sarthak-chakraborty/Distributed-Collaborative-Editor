@@ -74,6 +74,8 @@ def _doc_get_or_create(eid):
 
 
 def index(request, document_id=None):
+	if(not request.GET.get('from-master')):
+		return HttpResponse('Go to '+MASTER_URL)
 	if STATE == 'primary':	
 		if not document_id:
 			document_id = 'default'
@@ -110,6 +112,8 @@ def index(request, document_id=None):
 		# resp = JsonResponse(context)
 		resp['Cache-Control'] = 'no-store, must-revalidate'
 		return resp
+	else:
+		return HttpResponse('Go to '+MASTER_URL)
 
 
 def users(request):
