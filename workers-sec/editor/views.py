@@ -25,11 +25,9 @@ REPLICA_URLS = [							# All replica urls
 ]
 ALIVE_STATUS = [True,True,True]				# Used by master
 CURRENT_PRIMARY = 0							# Index of current primary
-IS_SOME_PRIMARY = 1
+
 HEARTBEAT_TIMEOUT = 1						# Time between consequitive heartbeats
 HEARTBEAT_MISS_TIMEOUT = 3*HEARTBEAT_TIMEOUT	# Time after which missing heartbeats is considered failure
-safe_to_send_new_lease=1
-last_heard_from_secondary=time.time()
 
 HB_TIMES = [								# Time when last heartbeat received from replica. 
 	time.time(),
@@ -37,19 +35,7 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 	# time.time()	# Add this if we need 3 servers
 ]	
 
-LEASE_TIMEOUT=15
-Lease_begin_time=time.time()
-Lease_sent_time=time.time()	
-
 def heartbeat_sender():
-	global STATE
-	global IS_SOME_PRIMARY
-	global Lease_sent_time
-	global Lease_begin_time
-	global ALIVE_STATUS
-	global last_heard_from_secondary
-	global safe_to_send_new_lease
-	global CURRENT_PRIMARY
 	if STATE in ['primary','secondary']:
 		while(1):
 			time.sleep(HEARTBEAT_TIMEOUT)
@@ -59,7 +45,10 @@ def heartbeat_sender():
 				'sender': INDEX,
 				'sender_state': STATE
 			}
-			r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+			try:
+				r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+			except:
+				pass
 			print(r2.reason)
 			# print(r2.text)
 			if r2.ok:
@@ -67,19 +56,10 @@ def heartbeat_sender():
 			else:
 				print('Error in sending hb')
 
-			if time.time()-Lease_begin_time >= LEASE_TIMEOUT and STATE=='primary':
-				print("My lease has now expired")
-				# ALIVE_STATUS[CURRENT_PRIMARY]=False
-				STATE='secondary'
-				# IS_SOME_PRIMARY=0
-
-			time.sleep(1)
-
-
-
-sec_hb = threading.Thread(target = heartbeat_sender)
-sec_hb.start()
-			
+if STATE in ['primary','secondary']:
+	sec_hb = threading.Thread(target = heartbeat_sender)
+	sec_hb.start()
+				
 
 def _doc_get_or_create(eid):
 	try:
@@ -94,6 +74,8 @@ def _doc_get_or_create(eid):
 
 
 def index(request, document_id=None):
+	if(not request.GET.get('from-master')):
+		return HttpResponse('Go to '+MASTER_URL)
 	if STATE == 'primary':	
 		if not document_id:
 			document_id = 'default'
@@ -124,12 +106,14 @@ def index(request, document_id=None):
 		print("\nCONTEXT:")
 		print(context)
 
-		# resp = render(request, 'editor/index.html', context)
+		resp = render(request, 'editor/index.html', context)
 		# resp['Cache-Control'] = 'no-store, must-revalidate'
 		# return resp
-		resp = JsonResponse(context)
+		# resp = JsonResponse(context)
 		resp['Cache-Control'] = 'no-store, must-revalidate'
 		return resp
+	else:
+		return HttpResponse('Go to '+MASTER_URL)
 
 
 def users(request):
@@ -182,31 +166,32 @@ def document_changes(request, document_id):
 			if request.GET.get('link') == 'true':
 				link = True
 				sse = True
-			else:
-				accept = request.META.get('HTTP_ACCEPT')
-				if accept and accept.find('text/event-stream') != -1:
-					sse = True
+			# else:
+			# 	accept = request.META.get('HTTP_ACCEPT')
+			# 	if accept and accept.find('text/event-stream') != -1:
+			# 		sse = True
 
-			after = None
-			last_id = request.grip.last.get(gchannel)
-			if last_id:
-				after = int(last_id)
+			# after = None
+			# last_id = request.grip.last.get(gchannel)
+			# if last_id:
+			# 	after = int(last_id)
 			
-			if after is None and sse:
-				last_id = request.META.get('Last-Event-ID')
-				if last_id:
-					after = int(last_id)
+			# if after is None and sse:
+			# 	last_id = request.META.get('Last-Event-ID')
+			# 	if last_id:
+			# 		after = int(last_id)
 
-			if after is None and sse:
-				last_id = request.GET.get('lastEventId')
-				if last_id:
-					after = int(last_id)
+			# if after is None and sse:
+			# 	last_id = request.GET.get('lastEventId')
+			# 	if last_id:
+			# 		after = int(last_id)
 
-			if after is None:
-				afterstr = request.GET.get('after')
-				if afterstr:
-					after = int(afterstr)
+			# if after is None:
+			# 	afterstr = request.GET.get('after')
+			# 	if afterstr:
+			# 		after = int(afterstr)
 
+			after = int(request.GET.get('after'))
 			try:
 				doc = Document.objects.get(eid=document_id)
 				if after is not None:
@@ -230,23 +215,23 @@ def document_changes(request, document_id):
 				out = []
 				last_version = 0
 
-			if sse:
-				body = ''
-				if not link:
-					body += 'event: opened\ndata:\n\n'
-				for i in out:
-					event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
-						i['version'], json.dumps(i))
-					body += event
+			# if sse:
+			body = ''
+			if not link:
+				body += 'event: opened\ndata:\n\n'
+			for i in out:
+				event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
+					i['version'], json.dumps(i))
+				body += event
 
 
-				resp_content = {'body':body,
-							   'last_version':last_version,
-							   'out':out,
-							   'gchannel':gchannel,
-							   'success':True}
+			resp_content = {'body':body,
+							'last_version':last_version,
+							'out':out,
+							'gchannel':gchannel,
+							'success':True}
 
-				return JsonResponse(resp_content)
+			return JsonResponse(resp_content)
 
 				# resp = HttpResponse(body, content_type='text/event-stream')
 				# parsed = urlparse(reverse('document-changes', args=[document_id]))
@@ -258,8 +243,8 @@ def document_changes(request, document_id):
 				# 	instruct.add_channel(Channel(gchannel, prev_id=str(last_version)))
 				# 	instruct.set_keep_alive('event: keep-alive\ndata:\n\n; format=cstring', 20)
 				# return resp
-			else:
-				return JsonResponse({'changes': out})
+			#else:
+			#	return JsonResponse({'changes': out})
 
 		elif request.method == 'POST':
 			opdata = json.loads(request.POST['op'])
@@ -296,6 +281,7 @@ def document_changes(request, document_id):
 							return HttpResponseBadRequest(
 								'unable to transform against version {}'.format(c.version))
 
+					old_content = doc.content
 					try:
 						doc.content = op(doc.content)
 					except:
@@ -339,16 +325,17 @@ def document_changes(request, document_id):
 				if all(response_statuses):
 					event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
 						c.version, json.dumps(c.export()))
-					publish(
-						gchannel,
-						HttpStreamFormat(event),
-						id=str(c.version),
-						prev_id=str(c.version - 1))
+					resp_content = {'version':c.version,
+								'event':json.dumps(event),
+							   'gchannel':gchannel,
+							   'success':True}
+					return JsonResponse(resp_content)
 				else:
 					with transaction.atomic():
 						c.delete()
 						old_version = doc.version - 1
 						doc.version = old_version
+						doc.content = old_content
 						doc.save()
 					return HttpResponseBadRequest(
 							'Error in sending data to replica')
@@ -376,19 +363,19 @@ def document_changes(request, document_id):
 				except DocumentChange.DoesNotExist:
 
 					## Is it needed?
-					changes_since = DocumentChange.objects.filter(
-						document=doc,
-						version__gt=parent_version,
-						version__lte=doc.version).order_by('version')
+					# changes_since = DocumentChange.objects.filter(
+					# 	document=doc,
+					# 	version__gt=parent_version,
+					# 	version__lte=doc.version).order_by('version')
 
-					for c in changes_since:
-						op2 = TextOperation(json.loads(c.data))
-						try:
-							op, _ = TextOperation.transform(op, op2)
-						except Exception as e:
-							print(e)
-							return HttpResponseBadRequest(
-								'unable to transform against version {}'.format(c.version))
+					# for c in changes_since:
+					# 	op2 = TextOperation(json.loads(c.data))
+					# 	try:
+					# 		op, _ = TextOperation.transform(op, op2)
+					# 	except Exception as e:
+					# 		print(e)
+					# 		return HttpResponseBadRequest(
+					# 			'unable to transform against version {}'.format(c.version))
 
 					try:
 						doc.content = op(doc.content)
@@ -420,50 +407,10 @@ diff URL for heartbeat to know whether the primary is alive or not
 if not, elect primary
 """
 
-def heartbeat_recv(request):
-	## use sender details
-
-	global STATE
-	global IS_SOME_PRIMARY
-	global Lease_sent_time
-	global Lease_begin_time
-	global ALIVE_STATUS
-	global last_heard_from_secondary
-	global safe_to_send_new_lease
-	global CURRENT_PRIMARY
-
-	if request.method == 'POST':
-		# sender = json.loads(request.POST['sender'])
-		sender = int(request.POST['sender'])
-		if sender == 'secondary':
-			ls1hbr = time.time()
-		print "hb received at myself (",STATE,") from ", sender
-		time.sleep(0.5)
-		print "current primary is ", CURRENT_PRIMARY
-		print "STATE=='master' ", STATE=='master'
-		print "sender==CURRENT_PRIMARY ", sender==CURRENT_PRIMARY
-		print "STATE=='master' and sender==CURRENT_PRIMARY ", STATE=='master' and sender==CURRENT_PRIMARY
-		if STATE=='primary' and sender==0 and request.POST['type']=='lease_extend':
-			print "Have received a lease extend"
-			Lease_begin_time=time.time()
-			payload = {
-				'type': 'lease_extend_ack',
-				'sender': INDEX,
-				'sender_state': STATE
-			}
-			Lease_begin_time=time.time()
-			r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
-			print(r2.reason)
-			# print(r2.text)
-			if r2.ok:
-				print "Lease extend ACK successfully sent by me i.e ", INDEX
-			else:
-				print('Error in sending lease extend ACK')
-
 
 def change_status(request):
 	if STATE in ['primary', 'secondary']:
-		index = request.POST['index']
+		index = int(request.POST['index'])
 		status = request.POST['status']
 		if status == 'crash':
 			ALIVE_STATUS[index] = False
@@ -471,23 +418,16 @@ def change_status(request):
 			ALIVE_STATUS[index] = True
 	return JsonResponse({'ok':'ok'})
 
-
 def become_primary(request):
-	if request.method==POST:
-		if int(request.POST['sender'])==0:
-			STATE='primary'
+	global STATE
+	if STATE == 'secondary':
+		STATE = 'primary'
+	return JsonResponse({'ok':'ok'})
 
-
-def become_secondary():
-	pass
-
-# def become_primary(request):
-# 	if STATE == 'secondary':
-# 		STATE = 'primary'
-# 	return JsonResponse({'ok':'ok'})
-
-# def become_secondary(request):
-# 	if STATE == 'primary':
-# 		STATE = 'secondary'
-# 	return JsonResponse({'ok':'ok'})
+def become_secondary(request):
+	global STATE
+	if STATE == 'primary':
+		STATE = 'secondary'
+	return JsonResponse({'ok':'ok'})
 		
+
