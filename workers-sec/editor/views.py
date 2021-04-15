@@ -429,5 +429,12 @@ def become_secondary(request):
 	if STATE == 'primary':
 		STATE = 'secondary'
 	return JsonResponse({'ok':'ok'})
+
+def get_primary(request):
+	if request.method=='POST':
+		CURRENT_PRIMARY = request.POST.get('primary_ind')
+		print('Primary is now ', CURRENT_PRIMARY)
+
+
 		
 

@@ -233,6 +233,23 @@ def heartbeat_recv(request):
 			ALIVE_STATUS[sender] = True
 			print('Server {} is up again'.format(sender))
 			requests.get(REPLICA_URLS[sender]+'/api/become_secondary/')
+			payload = {'index': sender, 'primary_ind':CURRENT_PRIMARY}
+			url = REPLICA_URLS[sender] + '/api/get_primary/'
+			try:
+				r = requests.post(url, data = payload)
+				print('SENT post request')
+				if(r.ok):
+					print('done')
+				else:
+					print('no')
+					
+				print(url,payload)
+			except:
+				print('POST request failed')
+
+
+
+
 			for u in REPLICA_URLS:
 				url = u+'/api/change_status/'
 				payload = {
