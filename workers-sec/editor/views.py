@@ -13,9 +13,11 @@ from .models import User, Document, DocumentChange
 import requests
 import time
 import threading
+import Queue
 
 STATE = 'secondary'		# one of ['primary', 'secondary', 'recovering']
 INDEX = 1 				# Index of the current replica - not applicable to master
+DOC_ID = None
 MASTER_URL = 'http://127.0.0.1:8001'		# The master server
 SELF_URL = 'http://127.0.0.1:8003'
 REPLICA_URLS = [							# All replica urls
@@ -33,7 +35,9 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 	time.time(),
 	time.time()
 	# time.time()	# Add this if we need 3 servers
-]	
+]
+
+recovery_q = Queue(maxsize=0) 	
 
 def heartbeat_sender():
 	if STATE in ['primary','secondary']:
@@ -80,6 +84,7 @@ def index(request, document_id=None):
 		if not document_id:
 			document_id = 'default'
 
+		DOC_ID = document_id
 		base_url = '{}://{}{}'.format(
 			'https' if request.is_secure() else 'http',
 			request.META.get('HTTP_HOST') or 'localhost',
@@ -407,6 +412,86 @@ diff URL for heartbeat to know whether the primary is alive or not
 if not, elect primary
 """
 
+def recover():
+	if STATE in ['secondary','recovering']:
+		try:
+			doc = Document.objects.get(eid=DOC_ID)
+			last_version_stored = doc.version
+
+			url = REPLICA_URLS[CURRENT_PRIMARY] + '/api/recovery_module/{}/'.format(DOC_ID)
+			payload = {'recovery' : True, 'version' : last_version_stored}
+			response = requests.post(url, data = payload)
+			resp_content = json.loads(response.text)
+
+			opdata = json.loads(resp_content['data'])
+			op = TextOperation(opdata)
+			request_id = resp_content['request-id']
+			parent_version = int(resp_content['parent-version'])
+			# doc = _doc_get_or_create(DOC_ID)
+			with transaction.atomic():
+				doc = Document.objects.select_for_update().get(id=doc.id)
+				try:
+					c = DocumentChange.objects.get(
+						document=doc,
+						request_id=request_id,
+						parent_version=parent_version)
+					print("Document change already exists!")
+				except DocumentChange.DoesNotExist:
+
+					try:
+						doc.content = op(doc.content)
+					except Exception as e:
+						print(e)
+						return HttpResponseBadRequest("Unable to apply change in secondary database")
+					
+					next_version = doc.version + 1
+					c = DocumentChange(
+						document=doc,
+						version=next_version,
+						request_id=request_id,
+						parent_version=parent_version,
+						data=json.dumps(op.ops))
+					c.save()
+					doc.version = next_version
+					doc.save()
+		except:
+			print('No Document of ID={} exists'.format(DOC_ID))
+
+"""
+1. Run the above function in a separate thread
+2. For Primary, it should not send messages to dead secondaries
+3. For sending recovery, Primary should be able to say that this is the last (maybe do it with a version number)
+4. Secondary in 'recovering' state must not ask for more changes once it knows that the last change has been received, change STATE='secondary'
+5. in document_changes, for 'recovering' state, add the messages in a queue, for secondary state, check if queue has something. 
+   If something is present, apply it (block until everything is applied? BETTER i think), else same thing will repeat (that is when the 
+   changes in the queue are being applied, add incoming changes to queue).... Or can we do something better? For example, primary wont send 
+   anything until recovery is complete... (have to add it in table and send it hoping that incoming changes occur at a slower rate than the 
+   recovery mechanism, so that it catches up at some time.)
+"""
+
+def recovery_module(request, document_id=None):
+	if STATE == 'primary':
+		if request.method == 'POST':
+			if not request.POST['recovery']:
+				return HttpResponseBadRequest('Not needed if not in recovery')
+
+			version = request.POST['version']
+			try:
+				doc = Document.objects.get(eid=document_id)
+			except Document.DoesNotExist:
+				print('Document does not exist')
+				return HttpResponseBadRequest('No Document of the given ID')
+
+			# TODO: Is it Correct?
+			doc_change = DocumentChange.objects.get(document=doc, version=version) 
+
+			payload = {'request_id' : doc_change.request_id, 'parent_version': doc_change.parent_version, 'data': doc_change.data}
+			return JSONResponse(payload)
+
+		return HttpResponseNotFound('Not a POST request')
+	return HttpResponseBadRequest('Not Primary')
+
+
 
 def change_status(request):
 	if STATE in ['primary', 'secondary']:
@@ -433,7 +518,10 @@ def become_secondary(request):
 def get_primary(request):
 	if request.method=='POST':
 		CURRENT_PRIMARY = request.POST['primary_ind']
-		print('Primary is now ', CURRENT_PRIMARY)
+		DOC_ID = request.POST['document_id']
+		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
+	return JsonResponse({'ok':'ok'})
+
 
 
 		

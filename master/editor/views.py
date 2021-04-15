@@ -15,6 +15,7 @@ import time
 import threading
 
 STATE = 'master'
+DOC_ID = None
 MASTER_URL = 'http://127.0.0.1:8001'		# The master server
 REPLICA_URLS = [							# All replica urls
 	'http://127.0.0.1:8002',
@@ -89,6 +90,7 @@ def _doc_get_or_create(eid):
 
 def index(request, document_id=None):
 	print(document_id)
+	DOC_ID = document_id
 	if document_id is None:
 		url = REPLICA_URLS[CURRENT_PRIMARY]+'/'
 	else:
@@ -229,28 +231,22 @@ def heartbeat_recv(request):
 		sender = int(request.POST['sender'])
 		HB_TIMES[sender] = time.time()
 		print('hb received from {}'.format(sender))
-		if(not ALIVE_STATUS[sender]):
+
+		if (not ALIVE_STATUS[sender]):
 			ALIVE_STATUS[sender] = True
 			print('Server {} is up again'.format(sender))
 			requests.get(REPLICA_URLS[sender]+'/api/become_secondary/')
-			payload = request.POST.dict()
- 			payload['index'] = sender
-			payload['primary_ind'] = CURRENT_PRIMARY
+			payload = {'index' : sender, 'primary_ind' : CURRENT_PRIMARY, 'document_id' : DOC_ID}
 			url = REPLICA_URLS[sender] + '/api/get_primary/'
 			try:
 				r = requests.post(url, data = payload)
-				print('SENT post request')
 				if(r.ok):
 					print('done')
 				else:
 					print('no')
-					
 				print(url,payload)
 			except:
 				print('POST request failed')
-
-
-
 
 			for u in REPLICA_URLS:
 				url = u+'/api/change_status/'
