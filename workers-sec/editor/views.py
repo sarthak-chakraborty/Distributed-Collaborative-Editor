@@ -432,7 +432,7 @@ def become_secondary(request):
 
 def get_primary(request):
 	if request.method=='POST':
-		CURRENT_PRIMARY = request.POST.get('primary_ind')
+		CURRENT_PRIMARY = request.POST['primary_ind']
 		print('Primary is now ', CURRENT_PRIMARY)
 
 
