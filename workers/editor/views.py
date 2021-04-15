@@ -360,19 +360,19 @@ def document_changes(request, document_id):
 				except DocumentChange.DoesNotExist:
 
 					## Is it needed?
-					changes_since = DocumentChange.objects.filter(
-						document=doc,
-						version__gt=parent_version,
-						version__lte=doc.version).order_by('version')
+					# changes_since = DocumentChange.objects.filter(
+					# 	document=doc,
+					# 	version__gt=parent_version,
+					# 	version__lte=doc.version).order_by('version')
 
-					for c in changes_since:
-						op2 = TextOperation(json.loads(c.data))
-						try:
-							op, _ = TextOperation.transform(op, op2)
-						except Exception as e:
-							print(e)
-							return HttpResponseBadRequest(
-								'unable to transform against version {}'.format(c.version))
+					# for c in changes_since:
+					# 	op2 = TextOperation(json.loads(c.data))
+					# 	try:
+					# 		op, _ = TextOperation.transform(op, op2)
+					# 	except Exception as e:
+					# 		print(e)
+					# 		return HttpResponseBadRequest(
+					# 			'unable to transform against version {}'.format(c.version))
 
 					try:
 						doc.content = op(doc.content)
