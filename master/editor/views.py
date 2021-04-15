@@ -92,7 +92,7 @@ def index(request, document_id=None):
 	if document_id is None:
 		url = REPLICA_URLS[CURRENT_PRIMARY]+'/'
 	else:
-		url = REPLICA_URLS[CURRENT_PRIMARY]+'/{}/'.format(document_id)
+		url = REPLICA_URLS[CURRENT_PRIMARY]+'/{}'.format(document_id)
 
 	print(url)
 	if request.method == 'GET':
