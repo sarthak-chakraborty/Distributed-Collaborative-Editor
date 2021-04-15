@@ -15,10 +15,10 @@ import time
 import threading
 
 		# one of ['primary', 'secondary', 'recovering', 'master']
-INDEX = 0 				# Index of the current replica - not applicable to master
-STATE = 'master'
+INDEX = 1 				# Index of the current replica - not applicable to master
+STATE = 'primary'
 MASTER_URL = 'http://127.0.0.1:8000'		# The master server
-SELF_URL = 'http://127.0.0.1:8000'
+SELF_URL = 'http://127.0.0.1:8001'
 REPLICA_URLS = [							# All replica urls
 	'http://127.0.0.1:8001',
 	'http://127.0.0.1:8002'
