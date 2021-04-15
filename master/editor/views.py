@@ -146,6 +146,38 @@ def document(request, document_id):
 def document_changes(request, document_id):
 	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/changes/'.format(document_id)
 	if request.method == 'GET':
+		gchannel = 'document-{}'.format(document_id)
+		link = False
+		sse = False
+		if request.GET.get('link') == 'true':
+			link = True
+			sse = True
+		else:
+			accept = request.META.get('HTTP_ACCEPT')
+			if accept and accept.find('text/event-stream') != -1:
+				sse = True
+
+		after = None
+		last_id = request.grip.last.get(gchannel)
+		if last_id:
+			after = int(last_id)
+		
+		if after is None and sse:
+			last_id = request.META.get('Last-Event-ID')
+			if last_id:
+				after = int(last_id)
+
+		if after is None and sse:
+			last_id = request.GET.get('lastEventId')
+			if last_id:
+				after = int(last_id)
+
+		if after is None:
+			afterstr = request.GET.get('after')
+			if afterstr:
+				after = int(afterstr)
+
+
 		payload = request.GET.dict()
 		payload['from-master'] = True
 		response = requests.get(url, payload)

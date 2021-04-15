@@ -166,31 +166,31 @@ def document_changes(request, document_id):
 			if request.GET.get('link') == 'true':
 				link = True
 				sse = True
-			else:
-				accept = request.META.get('HTTP_ACCEPT')
-				if accept and accept.find('text/event-stream') != -1:
-					sse = True
+			# else:
+			# 	accept = request.META.get('HTTP_ACCEPT')
+			# 	if accept and accept.find('text/event-stream') != -1:
+			# 		sse = True
 
-			after = None
-			last_id = request.grip.last.get(gchannel)
-			if last_id:
-				after = int(last_id)
+			# after = None
+			# last_id = request.grip.last.get(gchannel)
+			# if last_id:
+			# 	after = int(last_id)
 			
-			if after is None and sse:
-				last_id = request.META.get('Last-Event-ID')
-				if last_id:
-					after = int(last_id)
+			# if after is None and sse:
+			# 	last_id = request.META.get('Last-Event-ID')
+			# 	if last_id:
+			# 		after = int(last_id)
 
-			if after is None and sse:
-				last_id = request.GET.get('lastEventId')
-				if last_id:
-					after = int(last_id)
+			# if after is None and sse:
+			# 	last_id = request.GET.get('lastEventId')
+			# 	if last_id:
+			# 		after = int(last_id)
 
-			if after is None:
-				afterstr = request.GET.get('after')
-				if afterstr:
-					after = int(afterstr)
-
+			# if after is None:
+			# 	afterstr = request.GET.get('after')
+			# 	if afterstr:
+			# 		after = int(afterstr)
+			after = int(request.GET.get('after'))
 			try:
 				doc = Document.objects.get(eid=document_id)
 				if after is not None:
@@ -214,24 +214,24 @@ def document_changes(request, document_id):
 				out = []
 				last_version = 0
 
-			if sse:
-				body = ''
-				if not link:
-					body += 'event: opened\ndata:\n\n'
-				for i in out:
-					event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
-						i['version'], json.dumps(i))
-					body += event
+			# if sse:
+			body = ''
+			if not link:
+				body += 'event: opened\ndata:\n\n'
+			for i in out:
+				event = 'id: {}\nevent: change\ndata: {}\n\n'.format(
+					i['version'], json.dumps(i))
+				body += event
 
 
-				resp_content = {'body':body,
-							   'last_version':last_version,
-							   'out':out,
-							   'gchannel':gchannel,
-							   'success':True}
+			resp_content = {'body':body,
+							'last_version':last_version,
+							'out':out,
+							'gchannel':gchannel,
+							'success':True}
 
-				print('\n sse = true, sending response - ',resp_content)
-				return JsonResponse(resp_content)
+			# print('\n sse = true, sending response - ',resp_content)
+			return JsonResponse(resp_content)
 
 				# resp = HttpResponse(body, content_type='text/event-stream')
 				# parsed = urlparse(reverse('document-changes', args=[document_id]))
@@ -243,9 +243,9 @@ def document_changes(request, document_id):
 				# 	instruct.add_channel(Channel(gchannel, prev_id=str(last_version)))
 				# 	instruct.set_keep_alive('event: keep-alive\ndata:\n\n; format=cstring', 20)
 				# return resp
-			else:
-				print('\n sse = true, sending response - ',out)
-				return JsonResponse({'changes': out})
+			# else:
+			# 	print('\n sse = true, sending response - ',out)
+			# 	return JsonResponse({'changes': out})
 
 		elif request.method == 'POST':
 			opdata = json.loads(request.POST['op'])
