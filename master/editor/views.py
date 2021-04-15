@@ -200,6 +200,7 @@ def heartbeat_recv(request):
 		if(not ALIVE_STATUS[sender]):
 			ALIVE_STATUS[sender] = True
 			print('Server {} is up again'.format(sender))
+			requests.get(REPLICA_URLS[sender]+'/api/become_secondary/')
 			for u in REPLICA_URLS:
 				url = u+'/api/change_status/'
 				payload = {
