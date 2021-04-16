@@ -653,7 +653,7 @@ def recovery_module(request, document_id=None):
 					
 			# \doc_change = DocumentChange.objects.get(document=doc, version=version) 
 
-			payload = {'data': out}
+			payload = {'data': json.dumps(out)}
 			return JsonResponse(payload)
 
 		return HttpResponseNotFound('Not a POST request')
