@@ -118,27 +118,6 @@ def index(request, document_id=None):
 	return response		
 		
 
-def users(request):
-	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/users/'
-	if request.method == 'GET':
-		payload = request.GET.dict()
-		response = requests.get(url,payload)
-	elif request.method == 'POST':
-		payload = request.POST.dict()
-		response = requests.post(url,payload)
-	return response		
-
-
-def user(request, user_id):
-	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/users/{}/'.format(user_id)
-	if request.method == 'GET':
-		payload = request.GET.dict()
-		response = requests.get(url,payload)
-	elif request.method == 'POST':
-		payload = request.POST.dict()
-		response = requests.post(url,payload)
-	return response		
-
 
 def document(request, document_id):
 	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/'.format(document_id)

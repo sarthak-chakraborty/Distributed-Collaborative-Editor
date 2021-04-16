@@ -117,33 +117,8 @@ def index(request, document_id=None):
 		resp['Cache-Control'] = 'no-store, must-revalidate'
 		return resp
 	else:
-		return HttpResponse('Go to '+MASTER_URL)
+		return HttpResponse('Go to ' + MASTER_URL)
 
-
-def users(request):
-	if STATE == 'primary':
-		if request.method == 'POST':
-			name = request.POST['name']
-			try:
-				user = User.objects.get(name=name)
-			except User.DoesNotExist:
-				try:
-					user = User(name=name)
-					user.save()
-				except IntegrityError:
-					user = User.objects.get(name=name)
-			return JsonResponse(user.export())
-		else:
-			return HttpResponseNotAllowed(['POST'])
-
-
-def user(request, user_id):
-	if STATE == 'primary':
-		if request.method == 'GET':
-			user = get_object_or_404(User, id=user_id)
-			return JsonResponse(user.export())
-		else:
-			return HttpResponseNotAllowed(['GET'])
 
 
 def document(request, document_id):
