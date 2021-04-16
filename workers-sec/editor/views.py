@@ -17,10 +17,10 @@ import Queue
 import traceback
 
 STATE = 'secondary'		# one of ['primary', 'secondary', 'recovering']
-INDEX = 0 				# Index of the current replica - not applicable to master
+INDEX = 1 				# Index of the current replica - not applicable to master
 DOC_ID = None
 MASTER_URL = 'http://127.0.0.1:8001'		# The master server
-SELF_URL = 'http://127.0.0.1:8002'
+SELF_URL = 'http://127.0.0.1:8003'
 REPLICA_URLS = [							# All replica urls
 	'http://127.0.0.1:8002',
 	'http://127.0.0.1:8003'
