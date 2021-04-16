@@ -484,7 +484,7 @@ def recover():
 			payload = {'recovery' : True, 'version' : last_version_stored}
 			response = requests.post(url, data = payload)
 			print(response.reason)
-			resp_content = response.text
+			resp_content = json.loads(response.text)
 			print(resp_content)
 			# resp_content = json.loads(response.text)
 
@@ -492,18 +492,17 @@ def recover():
 			# op = TextOperation(opdata)
 			# request_id = resp_content['request-id']
 			# parent_version = int(resp_content['parent-version'])
-
-			changes = json.loads(resp_content['data']) # Is this the right syntax
+			changes = resp_content['data'] # Is this the right syntax
 
 			doc = _doc_get_or_create(DOC_ID)
 
 			with transaction.atomic():
 				doc = Document.objects.select_for_update().get(id=doc.id)
 				for chng in changes:
-					opdata = chng.data
+					opdata = chng['op']
 					op  = TextOperation(opdata)
-					parent_version = chng.parent_version
-					request_id = chng.request_id
+					parent_version = chng['parent_version']
+					request_id = chng['request_id']
 
 					try:
 						c = DocumentChange.objects.get(
@@ -633,7 +632,13 @@ def recovery_module(request, document_id=None):
 			changes = DocumentChange.objects.filter(
 						document=doc,
 						version__gt= version).order_by('version')[:50]
-			out = [c.export() for c in changes]
+			# out = [c.export() for c in changes]
+			out = []
+			for c in changes:
+				c_dict = c.export()
+				c_dict['parent_version'] = c.parent_version
+				c_dict['request_id'] = c.request_id
+				out.append(c_dict)
 			# changes_since = DocumentChange.objects.filter(
 			# 			document=doc,
 			# 			version__gt=parent_version,

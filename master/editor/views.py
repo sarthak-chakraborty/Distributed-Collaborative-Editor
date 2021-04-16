@@ -232,6 +232,11 @@ def document_changes(request, document_id):
 
 
 def heartbeat_recv(request):
+	global ALIVE_STATUS
+	global HB_TIMES
+	global REPLICA_URLS
+	global CURRENT_PRIMARY
+	global DOC_ID
 	## use sender details
 	if request.method == 'POST':
 		# sender = json.loads(request.POST['sender'])
