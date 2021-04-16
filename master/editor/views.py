@@ -12,6 +12,7 @@ from .text_operation import TextOperation
 from .models import User, Document, DocumentChange
 import requests
 import time
+import random
 import threading
 
 STATE = 'master'
@@ -24,6 +25,7 @@ REPLICA_URLS = [							# All replica urls
 ]
 ALIVE_STATUS = [True,True]				# Used by master
 CURRENT_PRIMARY = 0							# Index of current primary
+RECOVERING_NODES = set()
 
 HEARTBEAT_TIMEOUT = 1						# Time between consequitive heartbeats
 HEARTBEAT_MISS_TIMEOUT = 3*HEARTBEAT_TIMEOUT	# Time after which missing heartbeats is considered failure
@@ -32,7 +34,7 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 	time.time(),
 	time.time()
 	# time.time()	# Add this if we need 3 servers
-]	
+]
 
 
 def crash_detect():
@@ -60,7 +62,9 @@ def crash_detect():
 					done = False
 					while not done:
 						previous_primary = CURRENT_PRIMARY
-						CURRENT_PRIMARY = (i+1)%len(REPLICA_URLS)
+						eligible_primary = {i in range(len(REPLICA_URLS))} - {CURRENT_PRIMARY} - RECOVERING_NODES
+						CURRENT_PRIMARY = random.choice( list(eligible_primary) )
+						# CURRENT_PRIMARY = (i+1)%len(REPLICA_URLS)
 						try:
 							requests.get(REPLICA_URLS[previous_primary]+'/api/become_secondary/')
 						except:
@@ -237,12 +241,20 @@ def heartbeat_recv(request):
 	global REPLICA_URLS
 	global CURRENT_PRIMARY
 	global DOC_ID
+	global RECOVERING_NODES
 	## use sender details
 	if request.method == 'POST':
 		# sender = json.loads(request.POST['sender'])
 		sender = int(request.POST['sender'])
 		HB_TIMES[sender] = time.time()
 		print('hb received from {}'.format(sender))
+
+		# Add the index of sender nodes in a set if they are in 'recovering' state
+		if request.POST['sender_state'] == 'recovering':
+			RECOVERING_NODES.add(sender)
+		elif request.POST['sender_state'] in ['primary', 'secondary']:
+			if sender in RECOVERING_NODES:
+				A.remove(sender)
 
 		if (not ALIVE_STATUS[sender]):
 			ALIVE_STATUS[sender] = True
