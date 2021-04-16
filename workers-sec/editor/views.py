@@ -474,6 +474,7 @@ if not, elect primary
 def recover():
 	global STATE
 	global DOC_ID
+	print('In Recover thread, current state - ' + STATE)
 	if STATE in ['secondary','recovering']:
 		try:
 			doc = Document.objects.get(eid=DOC_ID)
@@ -482,7 +483,10 @@ def recover():
 			url = REPLICA_URLS[CURRENT_PRIMARY] + '/api/recovery_module/{}/'.format(DOC_ID)
 			payload = {'recovery' : True, 'version' : last_version_stored}
 			response = requests.post(url, data = payload)
-			resp_content = json.loads(response.text)
+			print(response.reason)
+			resp_content = response.text
+			print(resp_content)
+			# resp_content = json.loads(response.text)
 
 			# opdata = json.loads(resp_content['data'])
 			# op = TextOperation(opdata)
@@ -629,7 +633,7 @@ def recovery_module(request, document_id=None):
 			changes = DocumentChange.objects.filter(
 						document=doc,
 						version__gt= version).order_by('version')[:50]
-
+			out = [c.export() for c in changes]
 			# changes_since = DocumentChange.objects.filter(
 			# 			document=doc,
 			# 			version__gt=parent_version,
@@ -644,7 +648,7 @@ def recovery_module(request, document_id=None):
 					
 			# \doc_change = DocumentChange.objects.get(document=doc, version=version) 
 
-			payload = {'data': changes}
+			payload = {'data': out}
 			return JsonResponse(payload)
 
 		return HttpResponseNotFound('Not a POST request')
@@ -694,7 +698,14 @@ def get_primary(request):
 
 def become_recovery(request):
 	global STATE
+	global CURRENT_PRIMARY
+	global DOC_ID
 	STATE = 'recovering'
+	if request.method == 'POST':
+		CURRENT_PRIMARY = int(request.POST['primary_ind'])
+		DOC_ID = request.POST['document_id']
+		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
+		
 	recovery_thread = threading.Thread(target=recover)
 	recovery_thread.start()
 

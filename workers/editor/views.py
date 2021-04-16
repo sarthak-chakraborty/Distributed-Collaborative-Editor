@@ -630,7 +630,7 @@ def recovery_module(request, document_id=None):
 			changes = DocumentChange.objects.filter(
 						document=doc,
 						version__gt= version).order_by('version')[:50]
-
+			out = [c.export() for c in changes]
 			# changes_since = DocumentChange.objects.filter(
 			# 			document=doc,
 			# 			version__gt=parent_version,
@@ -645,7 +645,7 @@ def recovery_module(request, document_id=None):
 					
 			# \doc_change = DocumentChange.objects.get(document=doc, version=version) 
 
-			payload = {'data': changes}
+			payload = {'data': out}
 			return JsonResponse(payload)
 
 		return HttpResponseNotFound('Not a POST request')
@@ -696,8 +696,14 @@ def get_primary(request):
 def become_recovery(request):
 	global STATE
 	global CURRENT_PRIMARY
+	global DOC_ID
 	print("becoming recovery state")
 	STATE = 'recovering'
+	if request.method == 'POST':
+		CURRENT_PRIMARY = int(request.POST['primary_ind'])
+		DOC_ID = request.POST['document_id']
+		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
+		
 	recovery_thread = threading.Thread(target=recover)
 	recovery_thread.start()
 

@@ -15,7 +15,7 @@ import time
 import threading
 
 STATE = 'master'
-DOC_ID = None
+DOC_ID = 'default'
 MASTER_URL = 'http://127.0.0.1:8001'		# The master server
 REPLICA_URLS = [							# All replica urls
 	'http://127.0.0.1:8002',
