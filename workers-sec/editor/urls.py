@@ -11,6 +11,7 @@ urlpatterns = [
 	url(r'^(?P<document_id>[^/]+)$', views.index),
 	url(r'^api/become_primary/$', views.become_primary, name='become_primary'),
 	url(r'^api/become_secondary/$',views.become_secondary, name='become_secon'),
+	url(r'^api/become_recovery/$', views.become_recovery, name='become_recovery'),
 	url(r'^api/change_status/$',views.change_status,name='change status'),
-	url(r'^api/get_primary/$',views.get_primary,name='get_primary')
+	# url(r'^api/get_primary/$',views.get_primary,name='get_primary')
 ]

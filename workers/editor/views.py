@@ -528,7 +528,7 @@ def recover():
 
 		# Now all changes are done and recovery is complete
 
-		STATE = 'secondary' #recovery is complete
+		#recovery is complete, move beyond while loop
 
 		#Now need to apply changes of the recovery queue
 
@@ -582,6 +582,9 @@ def recover():
 					c.save()
 					doc.version = next_version
 					doc.save()
+
+		STATE = 'secondary'
+
 
 
 
@@ -667,11 +670,26 @@ def become_secondary(request):
 
 
 def get_primary(request):
+	global STATE
+	global CURRENT_PRIMARY
 	if request.method == 'POST':
 		CURRENT_PRIMARY = request.POST['primary_ind']
 		DOC_ID = request.POST['document_id']
 		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
 	return JsonResponse({'ok':'ok'})
+
+
+
+
+def become_recovery(request):
+	global STATE
+	STATE = 'recovery'
+	recovery_thread = threading.Thread(target=recover)
+	recovery_thread.start()
+
+	return JsonResponse({'ok':'ok'})
+
+
 
 		
 

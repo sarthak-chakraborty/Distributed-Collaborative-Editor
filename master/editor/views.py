@@ -147,6 +147,7 @@ def document(request, document_id):
 
 def document_changes(request, document_id):
 	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/changes/'.format(document_id)
+	print('url here goes', url)
 	if request.method == 'GET':
 		gchannel = 'document-{}'.format(document_id)
 		link = False
@@ -235,18 +236,18 @@ def heartbeat_recv(request):
 		if (not ALIVE_STATUS[sender]):
 			ALIVE_STATUS[sender] = True
 			print('Server {} is up again'.format(sender))
-			requests.get(REPLICA_URLS[sender]+'/api/become_secondary/')
+			requests.get(REPLICA_URLS[sender]+'/api/become_recovery/')
 			payload = {'index' : sender, 'primary_ind' : CURRENT_PRIMARY, 'document_id' : DOC_ID}
-			url = REPLICA_URLS[sender] + '/api/get_primary/'
-			try:
-				r = requests.post(url, data = payload)
-				if(r.ok):
-					print('done')
-				else:
-					print('no')
-				print(url,payload)
-			except:
-				print('POST request failed')
+			# url = REPLICA_URLS[sender] + '/api/get_primary/'
+			# try:
+			# 	r = requests.post(url, data = payload)
+			# 	if(r.ok):
+			# 		print('done')
+			# 	else:
+			# 		print('no')
+			# 	print(url,payload)
+			# except:
+			# 	print('POST request failed')
 
 			for u in REPLICA_URLS:
 				url = u+'/api/change_status/'
