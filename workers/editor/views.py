@@ -471,6 +471,7 @@ if not, elect primary
 
 def recover():
 	global STATE
+	print('In Recover thread, current state - ' + STATE)
 	if STATE in ['secondary','recovering']:
 		try:
 			doc = Document.objects.get(eid=DOC_ID)
@@ -622,7 +623,7 @@ def recovery_module(request, document_id=None):
 			changes = DocumentChange.objects.filter(
 						document=doc,
 						version__gt= version).order_by('version')[:50]
-
+			out = [c.export() for c in changes]
 			# changes_since = DocumentChange.objects.filter(
 			# 			document=doc,
 			# 			version__gt=parent_version,
@@ -637,8 +638,8 @@ def recovery_module(request, document_id=None):
 					
 			# \doc_change = DocumentChange.objects.get(document=doc, version=version) 
 
-			payload = {'data': changes}
-			return JSONResponse(payload)
+			payload = {'data': out}
+			return JsonResponse(payload)
 
 		return HttpResponseNotFound('Not a POST request')
 	return HttpResponseBadRequest('Not Primary')
@@ -670,21 +671,28 @@ def become_secondary(request):
 	return JsonResponse({'ok':'ok'})
 
 
-def get_primary(request):
-	global STATE
-	global CURRENT_PRIMARY
-	if request.method == 'POST':
-		CURRENT_PRIMARY = request.POST['primary_ind']
-		DOC_ID = request.POST['document_id']
-		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
-	return JsonResponse({'ok':'ok'})
+# def get_primary(request):
+# 	global STATE
+# 	global CURRENT_PRIMARY
+# 	if request.method == 'POST':
+# 		CURRENT_PRIMARY = request.POST['primary_ind']
+# 		DOC_ID = request.POST['document_id']
+# 		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
+# 	return JsonResponse({'ok':'ok'})
 
 
 
 
 def become_recovery(request):
 	global STATE
+	global CURRENT_PRIMARY
+	global DOC_ID
 	STATE = 'recovering'
+	if request.method == 'POST':
+		CURRENT_PRIMARY = int(request.POST['primary_ind'])
+		DOC_ID = request.POST['document_id']
+		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
+		
 	recovery_thread = threading.Thread(target=recover)
 	recovery_thread.start()
 
