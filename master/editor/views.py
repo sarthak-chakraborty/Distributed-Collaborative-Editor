@@ -92,6 +92,8 @@ def index(request, document_id=None):
 	global DOC_ID
 	if not document_id:
 		DOC_ID = 'default'
+	elif document_id == 'favicon.ico':
+		pass
 	else:
 		DOC_ID = document_id
 	print(document_id, DOC_ID)
@@ -240,7 +242,6 @@ def heartbeat_recv(request):
 		if (not ALIVE_STATUS[sender]):
 			ALIVE_STATUS[sender] = True
 			print('Server {} is up again'.format(sender))
-			requests.get(REPLICA_URLS[sender]+'/api/become_recovery/')
 			payload = {'index' : sender, 'primary_ind' : CURRENT_PRIMARY, 'document_id' : DOC_ID}
 			url = REPLICA_URLS[sender] + '/api/get_primary/'
 			try:
@@ -252,6 +253,7 @@ def heartbeat_recv(request):
 				print(url,payload)
 			except:
 				print('POST request failed')
+			requests.get(REPLICA_URLS[sender]+'/api/become_recovery/')
 
 			for u in REPLICA_URLS:
 				url = u+'/api/change_status/'

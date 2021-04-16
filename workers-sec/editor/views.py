@@ -14,6 +14,7 @@ import requests
 import time
 import threading
 import Queue
+import traceback
 
 STATE = 'secondary'		# one of ['primary', 'secondary', 'recovering']
 INDEX = 1			# Index of the current replica - not applicable to master
@@ -472,6 +473,7 @@ if not, elect primary
 
 def recover():
 	global STATE
+	global DOC_ID
 	if STATE in ['secondary','recovering']:
 		try:
 			doc = Document.objects.get(eid=DOC_ID)
@@ -524,7 +526,9 @@ def recover():
 						c.save()
 						doc.version = next_version
 						doc.save()
-		except:
+		except Exception as e:
+			print(e)
+			traceback.print_exc()
 			print('No Document of ID={} exists'.format(DOC_ID))
 
 
@@ -608,6 +612,7 @@ def recover():
 
 def recovery_module(request, document_id=None):
 	global STATE
+	global DOC_ID
 	if STATE == 'primary':
 		if request.method == 'POST':
 			if not request.POST['recovery']:
@@ -640,7 +645,7 @@ def recovery_module(request, document_id=None):
 			# \doc_change = DocumentChange.objects.get(document=doc, version=version) 
 
 			payload = {'data': changes}
-			return JSONResponse(payload)
+			return JsonResponse(payload)
 
 		return HttpResponseNotFound('Not a POST request')
 	return HttpResponseBadRequest('Not Primary')

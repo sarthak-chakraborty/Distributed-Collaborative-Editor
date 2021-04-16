@@ -14,6 +14,7 @@ import requests
 import time
 import threading
 import Queue
+import traceback
 
 STATE = 'primary'		# one of ['primary', 'secondary', 'recovering']
 INDEX = 0 				# Index of the current replica - not applicable to master
@@ -471,18 +472,20 @@ if not, elect primary
 
 def recover():
 	global STATE
+	global DOC_ID
 	print("in recover function, current state is {}".format(STATE))
+	print("DOC_ID: {}".format(DOC_ID))
 	if STATE in ['secondary','recovering']:
 		try:
 			doc = Document.objects.get(eid=DOC_ID)
 			last_version_stored = doc.version
-
+			print("Last version available before crash-{}".format(last_version_stored))
 			url = REPLICA_URLS[CURRENT_PRIMARY] + '/api/recovery_module/{}/'.format(DOC_ID)
 			payload = {'recovery' : True, 'version' : last_version_stored}
 			response = requests.post(url, data = payload)
+			print(response.text)
 			resp_content = json.loads(response.text)
 			print("resp_content")
-			print(resp_content)
 			# opdata = json.loads(resp_content['data'])
 			# op = TextOperation(opdata)
 			# request_id = resp_content['request-id']
@@ -525,7 +528,9 @@ def recover():
 						c.save()
 						doc.version = next_version
 						doc.save()
-		except:
+		except Exception as e:
+			print(e)
+			traceback.print_exc()
 			print('No Document of ID={} exists'.format(DOC_ID))
 
 		print("Applied changes, caught up with primary")
@@ -641,7 +646,7 @@ def recovery_module(request, document_id=None):
 			# \doc_change = DocumentChange.objects.get(document=doc, version=version) 
 
 			payload = {'data': changes}
-			return JSONResponse(payload)
+			return JsonResponse(payload)
 
 		return HttpResponseNotFound('Not a POST request')
 	return HttpResponseBadRequest('Not Primary')
