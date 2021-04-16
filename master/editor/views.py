@@ -39,6 +39,7 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 
 def crash_detect():
 	global CURRENT_PRIMARY
+	global RECOVERING_NODES
 	time.sleep(5)
 	while(1):
 		for i in range(len(HB_TIMES)):
@@ -62,7 +63,7 @@ def crash_detect():
 					done = False
 					while not done:
 						previous_primary = CURRENT_PRIMARY
-						eligible_primary = {i in range(len(REPLICA_URLS))} - {CURRENT_PRIMARY} - RECOVERING_NODES
+						eligible_primary = {i for i in range(len(REPLICA_URLS))} - {CURRENT_PRIMARY} - RECOVERING_NODES
 						CURRENT_PRIMARY = random.choice( list(eligible_primary) )
 						# CURRENT_PRIMARY = (i+1)%len(REPLICA_URLS)
 						try:
@@ -254,7 +255,7 @@ def heartbeat_recv(request):
 			RECOVERING_NODES.add(sender)
 		elif request.POST['sender_state'] in ['primary', 'secondary']:
 			if sender in RECOVERING_NODES:
-				A.remove(sender)
+				RECOVERING_NODES.remove(sender)
 
 		if (not ALIVE_STATUS[sender]):
 			ALIVE_STATUS[sender] = True

@@ -16,7 +16,7 @@ import threading
 import Queue
 import traceback
 
-STATE = 'primary'		# one of ['primary', 'secondary', 'recovering']
+STATE = 'editor'		# one of ['primary', 'secondary', 'recovering']
 INDEX = 0 				# Index of the current replica - not applicable to master
 DOC_ID = None
 MASTER_URL = 'http://127.0.0.1:8001'		# The master server
