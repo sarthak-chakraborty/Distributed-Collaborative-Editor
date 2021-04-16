@@ -492,8 +492,7 @@ def recover():
 			# op = TextOperation(opdata)
 			# request_id = resp_content['request-id']
 			# parent_version = int(resp_content['parent-version'])
-			changes = resp_content['data'] # Is this the right syntax
-
+			changes = json.loads(resp_content['data']) # Is this the right syntax
 			doc = _doc_get_or_create(DOC_ID)
 
 			with transaction.atomic():
