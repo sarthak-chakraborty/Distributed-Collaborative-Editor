@@ -22,7 +22,7 @@ REPLICA_URLS = [							# All replica urls
 	'http://127.0.0.1:8003'
 	# 'http://127.0.0.1:8003' # Add this if we need 3 servers
 ]
-ALIVE_STATUS = [True,True,True]				# Used by master
+ALIVE_STATUS = [True,True]				# Used by master
 CURRENT_PRIMARY = 0							# Index of current primary
 
 HEARTBEAT_TIMEOUT = 1						# Time between consequitive heartbeats
@@ -89,8 +89,12 @@ def _doc_get_or_create(eid):
 
 
 def index(request, document_id=None):
-	print(document_id)
-	DOC_ID = document_id
+	global DOC_ID
+	if not document_id:
+		DOC_ID = 'default'
+	else:
+		DOC_ID = document_id
+	print(document_id, DOC_ID)
 	if document_id is None:
 		url = REPLICA_URLS[CURRENT_PRIMARY]+'/'
 	else:
@@ -238,16 +242,16 @@ def heartbeat_recv(request):
 			print('Server {} is up again'.format(sender))
 			requests.get(REPLICA_URLS[sender]+'/api/become_recovery/')
 			payload = {'index' : sender, 'primary_ind' : CURRENT_PRIMARY, 'document_id' : DOC_ID}
-			# url = REPLICA_URLS[sender] + '/api/get_primary/'
-			# try:
-			# 	r = requests.post(url, data = payload)
-			# 	if(r.ok):
-			# 		print('done')
-			# 	else:
-			# 		print('no')
-			# 	print(url,payload)
-			# except:
-			# 	print('POST request failed')
+			url = REPLICA_URLS[sender] + '/api/get_primary/'
+			try:
+				r = requests.post(url, data = payload)
+				if(r.ok):
+					print('done')
+				else:
+					print('no')
+				print(url,payload)
+			except:
+				print('POST request failed')
 
 			for u in REPLICA_URLS:
 				url = u+'/api/change_status/'

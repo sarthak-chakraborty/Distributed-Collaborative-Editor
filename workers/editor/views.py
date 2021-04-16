@@ -25,7 +25,7 @@ REPLICA_URLS = [							# All replica urls
 	'http://127.0.0.1:8003'
 	# 'http://127.0.0.1:8003' # Add this if we need 3 servers
 ]
-ALIVE_STATUS = [True,True,True]				# Used by master
+ALIVE_STATUS = [True,True]				# Used by master
 CURRENT_PRIMARY = 0							# Index of current primary
 
 HEARTBEAT_TIMEOUT = 1						# Time between consequitive heartbeats
@@ -53,7 +53,7 @@ def heartbeat_sender():
 				r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
 			except:
 				pass
-			print(r2.reason)
+			# print(r2.reason)
 			# print(r2.text)
 			if r2.ok:
 				print('Heartbeat successfully sent')
@@ -470,6 +470,8 @@ if not, elect primary
 """
 
 def recover():
+	global STATE
+	print("in recover function, current state is {}".format(STATE))
 	if STATE in ['secondary','recovering']:
 		try:
 			doc = Document.objects.get(eid=DOC_ID)
@@ -479,7 +481,8 @@ def recover():
 			payload = {'recovery' : True, 'version' : last_version_stored}
 			response = requests.post(url, data = payload)
 			resp_content = json.loads(response.text)
-
+			print("resp_content")
+			print(resp_content)
 			# opdata = json.loads(resp_content['data'])
 			# op = TextOperation(opdata)
 			# request_id = resp_content['request-id']
@@ -525,13 +528,13 @@ def recover():
 		except:
 			print('No Document of ID={} exists'.format(DOC_ID))
 
-
+		print("Applied changes, caught up with primary")
 		# Now all changes are done and recovery is complete
 
 		#recovery is complete, move beyond while loop
 
 		#Now need to apply changes of the recovery queue
-
+		print("reading from queue")
 		while(not recovery_q.empty()):
 			cur_change = recovery_q.get()
 			document_id = cur_change[0]
@@ -582,7 +585,7 @@ def recover():
 					c.save()
 					doc.version = next_version
 					doc.save()
-
+		print("changing state to secondary")
 		STATE = 'secondary'
 
 
@@ -605,6 +608,7 @@ def recover():
 """
 
 def recovery_module(request, document_id=None):
+	global STATE
 	if STATE == 'primary':
 		if request.method == 'POST':
 			if not request.POST['recovery']:
@@ -644,6 +648,8 @@ def recovery_module(request, document_id=None):
 
 
 def change_status(request):
+	global STATE
+	global ALIVE_STATUS
 	if STATE in ['primary', 'secondary']:
 		index = int(request.POST['index'])
 		status = request.POST['status']
@@ -672,8 +678,9 @@ def become_secondary(request):
 def get_primary(request):
 	global STATE
 	global CURRENT_PRIMARY
+	global DOC_ID
 	if request.method == 'POST':
-		CURRENT_PRIMARY = request.POST['primary_ind']
+		CURRENT_PRIMARY = int(request.POST['primary_ind'])
 		DOC_ID = request.POST['document_id']
 		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
 	return JsonResponse({'ok':'ok'})
@@ -683,7 +690,10 @@ def get_primary(request):
 
 def become_recovery(request):
 	global STATE
+	global CURRENT_PRIMARY
+	print("becoming recovery state")
 	STATE = 'recovery'
+	# CURRENT_PRIMARY = int(request.POST['primary_ind'])
 	recovery_thread = threading.Thread(target=recover)
 	recovery_thread.start()
 

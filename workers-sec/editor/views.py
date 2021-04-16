@@ -25,7 +25,7 @@ REPLICA_URLS = [							# All replica urls
 	'http://127.0.0.1:8003'
 	# 'http://127.0.0.1:8003' # Add this if we need 3 servers
 ]
-ALIVE_STATUS = [True,True,True]				# Used by master
+ALIVE_STATUS = [True,True]				# Used by master
 CURRENT_PRIMARY = 0							# Index of current primary
 
 HEARTBEAT_TIMEOUT = 1						# Time between consequitive heartbeats
@@ -471,6 +471,7 @@ if not, elect primary
 """
 
 def recover():
+	global STATE
 	if STATE in ['secondary','recovering']:
 		try:
 			doc = Document.objects.get(eid=DOC_ID)
@@ -606,6 +607,7 @@ def recover():
 """
 
 def recovery_module(request, document_id=None):
+	global STATE
 	if STATE == 'primary':
 		if request.method == 'POST':
 			if not request.POST['recovery']:
@@ -645,6 +647,8 @@ def recovery_module(request, document_id=None):
 
 
 def change_status(request):
+	global STATE
+	global ALIVE_STATUS
 	if STATE in ['primary', 'secondary']:
 		index = int(request.POST['index'])
 		status = request.POST['status']
@@ -670,14 +674,15 @@ def become_secondary(request):
 	return JsonResponse({'ok':'ok'})
 
 
-# def get_primary(request):
-# 	global STATE
-# 	global CURRENT_PRIMARY
-# 	if request.method == 'POST':
-# 		CURRENT_PRIMARY = request.POST['primary_ind']
-# 		DOC_ID = request.POST['document_id']
-# 		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
-# 	return JsonResponse({'ok':'ok'})
+def get_primary(request):
+	global STATE
+	global CURRENT_PRIMARY
+	global DOC_ID
+	if request.method == 'POST':
+		CURRENT_PRIMARY = int(request.POST['primary_ind'])
+		DOC_ID = request.POST['document_id']
+		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
+	return JsonResponse({'ok':'ok'})
 
 
 
