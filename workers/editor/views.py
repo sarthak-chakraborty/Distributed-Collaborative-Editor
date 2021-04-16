@@ -18,7 +18,7 @@ import traceback
 
 STATE = 'primary'		# one of ['primary', 'secondary', 'recovering']
 INDEX = 0 				# Index of the current replica - not applicable to master
-DOC_ID = None
+
 MASTER_URL = 'http://127.0.0.1:8001'		# The master server
 SELF_URL = 'http://127.0.0.1:8002'
 REPLICA_URLS = [							# All replica urls
@@ -85,7 +85,6 @@ def index(request, document_id=None):
 		if not document_id:
 			document_id = 'default'
 
-		DOC_ID = document_id
 		base_url = '{}://{}{}'.format(
 			'https' if request.is_secure() else 'http',
 			request.META.get('HTTP_HOST') or 'localhost',
@@ -447,66 +446,70 @@ if not, elect primary
 
 def recover():
 	global STATE
-	global DOC_ID
+
 	print("in recover function, current state is {}".format(STATE))
-	print("DOC_ID: {}".format(DOC_ID))
+
 	if STATE in ['secondary','recovering']:
-		try:
-			doc = Document.objects.get(eid=DOC_ID)
-			last_version_stored = doc.version
-			print("Last version available before crash-{}".format(last_version_stored))
-			url = REPLICA_URLS[CURRENT_PRIMARY] + '/api/recovery_module/{}/'.format(DOC_ID)
-			payload = {'recovery' : True, 'version' : last_version_stored}
-			response = requests.post(url, data = payload)
-			print(response.text)
-			resp_content = json.loads(response.text)
-			print("resp_content")
-			# opdata = json.loads(resp_content['data'])
-			# op = TextOperation(opdata)
-			# request_id = resp_content['request-id']
-			# parent_version = int(resp_content['parent-version'])
-			print('type',type(resp_content))
-			changes = json.loads(resp_content['data']) # Is this the right syntax
+		all_docs = Document.objects.all()
 
-			doc = _doc_get_or_create(DOC_ID)
+		for cur_doc in all_docs:
+			try:
+				print(cur_doc.eid)
+				print(cur_doc.id)
+				last_version_stored = cur_doc.version
+				print("Last version available before crash-{}".format(last_version_stored))
+				url = REPLICA_URLS[CURRENT_PRIMARY] + '/api/recovery_module/{}/'.format(cur_doc.eid)
+				payload = {'recovery' : True, 'version' : last_version_stored}
+				response = requests.post(url, data = payload)
+				print(response.text)
+				resp_content = json.loads(response.text)
+				print("resp_content")
+				# opdata = json.loads(resp_content['data'])
+				# op = TextOperation(opdata)
+				# request_id = resp_content['request-id']
+				# parent_version = int(resp_content['parent-version'])
+				print('type',type(resp_content))
+				changes = json.loads(resp_content['data']) # Is this the right syntax
 
-			with transaction.atomic():
-				doc = Document.objects.select_for_update().get(id=doc.id)
-				for chng in changes:
-					opdata = chng['op']
-					op  = TextOperation(opdata)
-					parent_version = chng['parent_version']
-					request_id = chng['request_id'] 
+				# doc = _doc_get_or_create(DOC_ID)
 
-					try:
-						c = DocumentChange.objects.get(
-							document=doc,
-							request_id=request_id,
-							parent_version=parent_version)
-						print("Document change already exists!")
-					except DocumentChange.DoesNotExist:
-
+				with transaction.atomic():
+					doc = Document.objects.select_for_update().get(eid=cur_doc.eid)
+					for chng in changes:
+						opdata = chng['op']
+						op  = TextOperation(opdata)
+						parent_version = chng['parent_version']
+						request_id = chng['request_id'] 
 
 						try:
-							doc.content = op(doc.content)
-						except Exception as e:
-							print(e)
-							return HttpResponseBadRequest("Unable to apply change in secondary database")
-						
-						next_version = doc.version + 1
-						c = DocumentChange(
-							document=doc,
-							version=next_version,
-							request_id=request_id,
-							parent_version=parent_version,
-							data=json.dumps(op.ops))
-						c.save()
-						doc.version = next_version
-						doc.save()
-		except Exception as e:
-			print(e)
-			traceback.print_exc()
-			print('No Document of ID={} exists'.format(DOC_ID))
+							c = DocumentChange.objects.get(
+								document=doc,
+								request_id=request_id,
+								parent_version=parent_version)
+							print("Document change already exists!")
+						except DocumentChange.DoesNotExist:
+
+
+							try:
+								doc.content = op(doc.content)
+							except Exception as e:
+								print(e)
+								return HttpResponseBadRequest("Unable to apply change in secondary database")
+							
+							next_version = doc.version + 1
+							c = DocumentChange(
+								document=doc,
+								version=next_version,
+								request_id=request_id,
+								parent_version=parent_version,
+								data=json.dumps(op.ops))
+							c.save()
+							doc.version = next_version
+							doc.save()
+			except Exception as e:
+				print(e)
+				traceback.print_exc()
+				# print('No Document of ID={} exists'.format(DOC_ID))
 
 		print("Applied changes, caught up with primary")
 		# Now all changes are done and recovery is complete
@@ -523,7 +526,7 @@ def recover():
 			request_id = cur_change[3]
 
 			with transaction.atomic():
-				doc = Document.objects.select_for_update().get(id=document_id)
+				doc = Document.objects.select_for_update().get(eid=document_id)
 				try:
 					c = DocumentChange.objects.get(
 						document=doc,
@@ -664,11 +667,9 @@ def become_secondary(request):
 def get_primary(request):
 	global STATE
 	global CURRENT_PRIMARY
-	global DOC_ID
 	if request.method == 'POST':
 		CURRENT_PRIMARY = int(request.POST['primary_ind'])
-		DOC_ID = request.POST['document_id']
-		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
+		print('Primary is now {}'.format(CURRENT_PRIMARY))
 	return JsonResponse({'ok':'ok'})
 
 
@@ -676,14 +677,8 @@ def get_primary(request):
 
 def become_recovery(request):
 	global STATE
-	global CURRENT_PRIMARY
-	global DOC_ID
 	print("becoming recovery state")
 	STATE = 'recovering'
-	if request.method == 'POST':
-		CURRENT_PRIMARY = int(request.POST['primary_ind'])
-		DOC_ID = request.POST['document_id']
-		print('Primary is now {}, Document_id: {}'.format(CURRENT_PRIMARY,DOC_ID))
 		
 	recovery_thread = threading.Thread(target=recover)
 	recovery_thread.start()

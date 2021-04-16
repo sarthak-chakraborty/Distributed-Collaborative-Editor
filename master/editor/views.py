@@ -15,7 +15,7 @@ import time
 import threading
 
 STATE = 'master'
-DOC_ID = 'default'
+
 MASTER_URL = 'http://127.0.0.1:8001'		# The master server
 REPLICA_URLS = [							# All replica urls
 	'http://127.0.0.1:8002',
@@ -89,14 +89,6 @@ def _doc_get_or_create(eid):
 
 
 def index(request, document_id=None):
-	global DOC_ID
-	if not document_id:
-		DOC_ID = 'default'
-	elif document_id == 'favicon.ico':
-		pass
-	else:
-		DOC_ID = document_id
-	print(document_id, DOC_ID)
 	if document_id is None:
 		url = REPLICA_URLS[CURRENT_PRIMARY]+'/'
 	else:
@@ -215,7 +207,6 @@ def heartbeat_recv(request):
 	global HB_TIMES
 	global REPLICA_URLS
 	global CURRENT_PRIMARY
-	global DOC_ID
 	## use sender details
 	if request.method == 'POST':
 		# sender = json.loads(request.POST['sender'])
@@ -226,7 +217,7 @@ def heartbeat_recv(request):
 		if (not ALIVE_STATUS[sender]):
 			ALIVE_STATUS[sender] = True
 			print('Server {} is up again'.format(sender))
-			payload = {'index' : sender, 'primary_ind' : CURRENT_PRIMARY, 'document_id' : DOC_ID}
+			payload = {'index' : sender, 'primary_ind' : CURRENT_PRIMARY}
 			url = REPLICA_URLS[sender] + '/api/get_primary/'
 			try:
 				r = requests.post(url, data = payload)
