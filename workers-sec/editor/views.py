@@ -97,8 +97,24 @@ def index(request, document_id=None):
 		try:
 			doc = Document.objects.get(eid=document_id)
 		except Document.DoesNotExist:
-			doc = Document(eid=document_id)
-		
+			if(not all(ALIVE_STATUS)):
+				return HttpResponse('Failed to create new doc')
+			response_statuses = []
+			for i in range(len(REPLICA_URLS)):
+				if REPLICA_URLS[i] == SELF_URL:
+					continue
+				if ALIVE_STATUS[i]:
+					r = requests.post(REPLICA_URLS[i]+'/api/documents/{}/'.format(document_id))
+					if r.ok:
+						response_statuses.append(True)
+					else:
+						response_statuses.append(False)
+						break
+			
+			if all(response_statuses):
+				doc = _doc_get_or_create(document_id)
+			else:
+				return HttpResponse('Failed to create new doc')		
 		context = {
 			'document_id': document_id,
 			'document_title': doc.title,
@@ -121,17 +137,9 @@ def index(request, document_id=None):
 
 
 def document(request, document_id):
-	if STATE == 'primary':
-		if request.method == 'GET':
-			try:
-				doc = Document.objects.get(eid=document_id)
-			except Document.DoesNotExist:
-				doc = Document(eid=document_id)
-			resp = JsonResponse(doc.export())
-			resp['Cache-Control'] = 'no-store, must-revalidate'
-			return resp
-		else:
-			return HttpResponseNotAllowed(['GET'])
+	if STATE == 'secondary':
+		doc = _doc_get_or_create(document_id)
+		return JsonResponse({'ok':'ok'})
 
 
 def document_changes(request, document_id):
