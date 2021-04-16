@@ -12,17 +12,20 @@ from .text_operation import TextOperation
 from .models import User, Document, DocumentChange
 import requests
 import time
+import random
 import threading
 
 STATE = 'master'
+DOC_ID = 'default'
 MASTER_URL = 'http://127.0.0.1:8001'		# The master server
 REPLICA_URLS = [							# All replica urls
 	'http://127.0.0.1:8002',
 	'http://127.0.0.1:8003'
 	# 'http://127.0.0.1:8003' # Add this if we need 3 servers
 ]
-ALIVE_STATUS = [True,True,True]				# Used by master
+ALIVE_STATUS = [True,True]				# Used by master
 CURRENT_PRIMARY = 0							# Index of current primary
+RECOVERING_NODES = set()
 
 HEARTBEAT_TIMEOUT = 1						# Time between consequitive heartbeats
 HEARTBEAT_MISS_TIMEOUT = 3*HEARTBEAT_TIMEOUT	# Time after which missing heartbeats is considered failure
@@ -31,11 +34,12 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 	time.time(),
 	time.time()
 	# time.time()	# Add this if we need 3 servers
-]	
+]
 
 
 def crash_detect():
 	global CURRENT_PRIMARY
+	global RECOVERING_NODES
 	time.sleep(5)
 	while(1):
 		for i in range(len(HB_TIMES)):
@@ -59,7 +63,9 @@ def crash_detect():
 					done = False
 					while not done:
 						previous_primary = CURRENT_PRIMARY
-						CURRENT_PRIMARY = (i+1)%len(REPLICA_URLS)
+						eligible_primary = {i for i in range(len(REPLICA_URLS))} - {CURRENT_PRIMARY} - RECOVERING_NODES
+						CURRENT_PRIMARY = random.choice( list(eligible_primary) )
+						# CURRENT_PRIMARY = (i+1)%len(REPLICA_URLS)
 						try:
 							requests.get(REPLICA_URLS[previous_primary]+'/api/become_secondary/')
 						except:
@@ -88,7 +94,14 @@ def _doc_get_or_create(eid):
 
 
 def index(request, document_id=None):
-	print(document_id)
+	global DOC_ID
+	if not document_id:
+		DOC_ID = 'default'
+	elif document_id == 'favicon.ico':
+		pass
+	else:
+		DOC_ID = document_id
+	print(document_id, DOC_ID)
 	if document_id is None:
 		url = REPLICA_URLS[CURRENT_PRIMARY]+'/'
 	else:
@@ -145,6 +158,7 @@ def document(request, document_id):
 
 def document_changes(request, document_id):
 	url = REPLICA_URLS[CURRENT_PRIMARY]+'/api/documents/{}/changes/'.format(document_id)
+	print('url here goes', url)
 	if request.method == 'GET':
 		gchannel = 'document-{}'.format(document_id)
 		link = False
@@ -223,16 +237,42 @@ def document_changes(request, document_id):
 
 
 def heartbeat_recv(request):
+	global ALIVE_STATUS
+	global HB_TIMES
+	global REPLICA_URLS
+	global CURRENT_PRIMARY
+	global DOC_ID
+	global RECOVERING_NODES
 	## use sender details
 	if request.method == 'POST':
 		# sender = json.loads(request.POST['sender'])
 		sender = int(request.POST['sender'])
 		HB_TIMES[sender] = time.time()
 		print('hb received from {}'.format(sender))
-		if(not ALIVE_STATUS[sender]):
+
+		# Add the index of sender nodes in a set if they are in 'recovering' state
+		if request.POST['sender_state'] == 'recovering':
+			RECOVERING_NODES.add(sender)
+		elif request.POST['sender_state'] in ['primary', 'secondary']:
+			if sender in RECOVERING_NODES:
+				RECOVERING_NODES.remove(sender)
+
+		if (not ALIVE_STATUS[sender]):
 			ALIVE_STATUS[sender] = True
 			print('Server {} is up again'.format(sender))
-			requests.get(REPLICA_URLS[sender]+'/api/become_secondary/')
+			payload = {'index' : sender, 'primary_ind' : CURRENT_PRIMARY, 'document_id' : DOC_ID}
+			url = REPLICA_URLS[sender] + '/api/get_primary/'
+			try:
+				r = requests.post(url, data = payload)
+				if(r.ok):
+					print('done')
+				else:
+					print('no')
+				print(url,payload)
+			except:
+				print('POST request failed')
+			requests.get(REPLICA_URLS[sender]+'/api/become_recovery/')
+
 			for u in REPLICA_URLS:
 				url = u+'/api/change_status/'
 				payload = {
