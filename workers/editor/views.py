@@ -56,7 +56,7 @@ def heartbeat_sender():
 			# print(r2.reason)
 			# print(r2.text)
 			if r2.ok:
-				print('Heartbeat successfully sent')
+				print('Heartbeat successfully sent, Current state ' + STATE)
 			else:
 				print('Error in sending hb')
 
@@ -405,7 +405,7 @@ def document_changes(request, document_id):
 		if request.method == 'POST':
 
 			opdata = json.loads(request.POST['data'])
-			op = TextOperation(opdata)
+			# op = TextOperation(opdata)
 			request_id = request.POST['request-id']
 			parent_version = int(request.POST['parent-version'])
 			doc = _doc_get_or_create(document_id)
@@ -436,7 +436,7 @@ def document_changes(request, document_id):
 
 
 					## Add operation transform to recovery queue since it is recovering
-					recovery_q.put([document_id, parent_version, op, request_id])
+					recovery_q.put([document_id, parent_version, opdata, request_id])
 
 					# try:
 					# 	doc.content = op(doc.content)
@@ -539,7 +539,7 @@ def recover():
 			cur_change = recovery_q.get()
 			document_id = cur_change[0]
 			parent_version = cur_change[1]
-			opo = cur_change[2]
+			op = TextOperation(cur_change[2])
 			request_id = cur_change[3]
 
 			with transaction.atomic():
@@ -692,8 +692,7 @@ def become_recovery(request):
 	global STATE
 	global CURRENT_PRIMARY
 	print("becoming recovery state")
-	STATE = 'recovery'
-	# CURRENT_PRIMARY = int(request.POST['primary_ind'])
+	STATE = 'recovering'
 	recovery_thread = threading.Thread(target=recover)
 	recovery_thread.start()
 
