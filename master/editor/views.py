@@ -89,9 +89,12 @@ def _doc_get_or_create(eid):
 
 
 def index(request, document_id=None):
-	# global DOC_ID
-	print(document_id)
-	# DOC_ID = document_id
+	global DOC_ID
+	if not document_id:
+		DOC_ID = 'default'
+	else:
+		DOC_ID = document_id
+	print(document_id, DOC_ID)
 	if document_id is None:
 		url = REPLICA_URLS[CURRENT_PRIMARY]+'/'
 	else:
