@@ -16,7 +16,7 @@ import threading
 import Queue
 import traceback
 
-STATE = 'primary'		# one of ['primary', 'secondary', 'recovering']
+STATE = 'secondary'		# one of ['primary', 'secondary', 'recovering']
 INDEX = 0 				# Index of the current replica - not applicable to master
 DOC_ID = None
 MASTER_URL = 'http://127.0.0.1:8001'		# The master server
@@ -40,6 +40,28 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 
 recovery_q = Queue.Queue(maxsize=0) 
 
+LEASE_RECEIVED=time.time()
+def lease_new(request):
+	global STATE
+	global LEASE_RECEIVED
+	print "!!!LEASE RECEIVED!!!"
+	LEASE_RECEIVED=time.time()
+	STATE='primary'
+	return HttpResponse('Thanks for the lease')
+
+LEASE_TIMEOUT=10
+
+def sec_maker():
+	global STATE
+	while (1):
+		print "My current state is ", STATE
+		if (time.time()-LEASE_RECEIVED>LEASE_TIMEOUT):
+			STATE='secondary'
+		time.sleep(1)
+
+sm=threading.Thread(target=sec_maker)
+sm.start()
+
 def heartbeat_sender():
 	if STATE in ['primary','secondary','recovering']:
 		while(1):
@@ -52,14 +74,18 @@ def heartbeat_sender():
 			}
 			try:
 				r2 = requests.post(MASTER_URL+'/api/HB/', data = payload)
+				if r2.ok:
+					print('Heartbeat successfully sent, Current state ' + STATE)
+				else:
+					print('Error in sending hb')
 			except:
 				pass
 			# print(r2.reason)
 			# print(r2.text)
-			if r2.ok:
-				print('Heartbeat successfully sent, Current state ' + STATE)
-			else:
-				print('Error in sending hb')
+			# if r2.ok:
+			# 	print('Heartbeat successfully sent, Current state ' + STATE)
+			# else:
+			# 	print('Error in sending hb')
 
 if STATE in ['primary','secondary','recovering']:
 	sec_hb = threading.Thread(target = heartbeat_sender)
@@ -91,7 +117,7 @@ def index(request, document_id=None):
 			request.META.get('HTTP_HOST') or 'localhost',
 			reverse('index-default'))
 
-		print(base_url)
+		# print(base_url)
 		if base_url.endswith('/'):
 			base_url = base_url[:-1]
 
@@ -107,8 +133,8 @@ def index(request, document_id=None):
 			'document_version': doc.version,
 			'base_url': base_url
 		}
-		print("\nCONTEXT:")
-		print(context)
+		# print("\nCONTEXT:")
+		# print(context)
 
 		resp = render(request, 'editor/index.html', context)
 		# resp['Cache-Control'] = 'no-store, must-revalidate'
@@ -261,9 +287,9 @@ def document_changes(request, document_id):
 
 			request_id = request.POST['request-id']
 			parent_version = int(request.POST['parent-version'])
-			print('parent version is', parent_version)
+			# print('parent version is', parent_version)
 			doc = _doc_get_or_create(document_id)
-			print(doc.version, 'is doc version')
+			# print(doc.version, 'is doc version')
 
 			saved = False
 			with transaction.atomic():
@@ -366,7 +392,7 @@ def document_changes(request, document_id):
 						document=doc,
 						request_id=request_id,
 						parent_version=parent_version)
-					print("Document change already exists!")
+					# print("Document change already exists!")
 				except DocumentChange.DoesNotExist:
 
 					## Is it needed?
@@ -387,7 +413,7 @@ def document_changes(request, document_id):
 					try:
 						doc.content = op(doc.content)
 					except Exception as e:
-						print(e)
+						# print(e)
 						return HttpResponseBadRequest("Unable to apply change in secondary database")
 					
 					next_version = doc.version + 1
@@ -417,7 +443,7 @@ def document_changes(request, document_id):
 						document=doc,
 						request_id=request_id,
 						parent_version=parent_version)
-					print("Document change already exists!")
+					# print("Document change already exists!")
 				except DocumentChange.DoesNotExist:
 
 					## Is it needed?
@@ -473,24 +499,24 @@ if not, elect primary
 def recover():
 	global STATE
 	global DOC_ID
-	print("in recover function, current state is {}".format(STATE))
-	print("DOC_ID: {}".format(DOC_ID))
+	# print("in recover function, current state is {}".format(STATE))
+	# print("DOC_ID: {}".format(DOC_ID))
 	if STATE in ['secondary','recovering']:
 		try:
 			doc = Document.objects.get(eid=DOC_ID)
 			last_version_stored = doc.version
-			print("Last version available before crash-{}".format(last_version_stored))
+			# print("Last version available before crash-{}".format(last_version_stored))
 			url = REPLICA_URLS[CURRENT_PRIMARY] + '/api/recovery_module/{}/'.format(DOC_ID)
 			payload = {'recovery' : True, 'version' : last_version_stored}
 			response = requests.post(url, data = payload)
-			print(response.text)
+			# print(response.text)
 			resp_content = json.loads(response.text)
-			print("resp_content")
+			# print("resp_content")
 			# opdata = json.loads(resp_content['data'])
 			# op = TextOperation(opdata)
 			# request_id = resp_content['request-id']
 			# parent_version = int(resp_content['parent-version'])
-			print('type',type(resp_content))
+			# print('type',type(resp_content))
 			changes = json.loads(resp_content['data']) # Is this the right syntax
 
 			doc = _doc_get_or_create(DOC_ID)
@@ -508,14 +534,14 @@ def recover():
 							document=doc,
 							request_id=request_id,
 							parent_version=parent_version)
-						print("Document change already exists!")
+						# print("Document change already exists!")
 					except DocumentChange.DoesNotExist:
 
 
 						try:
 							doc.content = op(doc.content)
 						except Exception as e:
-							print(e)
+							# print(e)
 							return HttpResponseBadRequest("Unable to apply change in secondary database")
 						
 						next_version = doc.version + 1
@@ -529,17 +555,17 @@ def recover():
 						doc.version = next_version
 						doc.save()
 		except Exception as e:
-			print(e)
+			# print(e)
 			traceback.print_exc()
-			print('No Document of ID={} exists'.format(DOC_ID))
+			# print('No Document of ID={} exists'.format(DOC_ID))
 
-		print("Applied changes, caught up with primary")
+		# print("Applied changes, caught up with primary")
 		# Now all changes are done and recovery is complete
 
 		#recovery is complete, move beyond while loop
 
 		#Now need to apply changes of the recovery queue
-		print("reading from queue")
+		# print("reading from queue")
 		while(not recovery_q.empty()):
 			cur_change = recovery_q.get()
 			document_id = cur_change[0]
@@ -554,7 +580,7 @@ def recover():
 						document=doc,
 						request_id=request_id,
 						parent_version=parent_version)
-					print("Document change already exists!")
+					# print("Document change already exists!")
 				except DocumentChange.DoesNotExist:
 
 					## Is it needed?
@@ -577,7 +603,7 @@ def recover():
 					try:
 						doc.content = op(doc.content)
 					except Exception as e:
-						print(e)
+						# print(e)
 						return HttpResponseBadRequest("Unable to apply change in secondary database")
 					
 					next_version = doc.version + 1
@@ -718,4 +744,5 @@ def become_recovery(request):
 
 
 		
+
 

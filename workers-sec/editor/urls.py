@@ -4,6 +4,7 @@ from editor import views
 urlpatterns = [
 	url(r'^$', views.index, name='index-default'),
 	url(r'^api/users/$', views.users),
+	url(r'^api/lease_new/$', views.lease_new),
 	url(r'^api/users/(?P<user_id>[^/]+)/$', views.user),
 	url(r'^api/documents/(?P<document_id>[^/]+)/$', views.document),
 	url(r'^api/documents/(?P<document_id>[^/]+)/changes/$', views.document_changes, name='document-changes'),
@@ -15,3 +16,5 @@ urlpatterns = [
 	url(r'^api/change_status/$',views.change_status,name='change status'),
 	url(r'^api/get_primary/$',views.get_primary,name='get_primary')
 ]
+
+
