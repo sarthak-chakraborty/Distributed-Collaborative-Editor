@@ -37,10 +37,10 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 	# time.time()	# Add this if we need 3 servers
 ]	
 
-recovery_q = Queue(maxsize=0) 
+recovery_q = Queue.Queue(maxsize=0) 
 
 def heartbeat_sender():
-	if STATE in ['primary','secondary','recovering']
+	if STATE in ['primary','secondary','recovering']:
 		while(1):
 			time.sleep(HEARTBEAT_TIMEOUT)
 			print('IN background runner')
@@ -260,7 +260,9 @@ def document_changes(request, document_id):
 
 			request_id = request.POST['request-id']
 			parent_version = int(request.POST['parent-version'])
+			print('parent version is', parent_version)
 			doc = _doc_get_or_create(document_id)
+			print(doc.version, 'is doc version')
 
 			saved = False
 			with transaction.atomic():
@@ -399,6 +401,62 @@ def document_changes(request, document_id):
 					doc.save()
 			return JsonResponse({'ok':'ok'})
 
+	elif STATE == 'recovering':
+		if request.method == 'POST':
+
+			opdata = json.loads(request.POST['data'])
+			op = TextOperation(opdata)
+			request_id = request.POST['request-id']
+			parent_version = int(request.POST['parent-version'])
+			doc = _doc_get_or_create(document_id)
+			with transaction.atomic():
+				doc = Document.objects.select_for_update().get(id=doc.id)
+				try:
+					c = DocumentChange.objects.get(
+						document=doc,
+						request_id=request_id,
+						parent_version=parent_version)
+					print("Document change already exists!")
+				except DocumentChange.DoesNotExist:
+
+					## Is it needed?
+					# changes_since = DocumentChange.objects.filter(
+					# 	document=doc,
+					# 	version__gt=parent_version,
+					# 	version__lte=doc.version).order_by('version')
+
+					# for c in changes_since:
+					# 	op2 = TextOperation(json.loads(c.data))
+					# 	try:
+					# 		op, _ = TextOperation.transform(op, op2)
+					# 	except Exception as e:
+					# 		print(e)
+					# 		return HttpResponseBadRequest(
+					# 			'unable to transform against version {}'.format(c.version))
+
+
+					## Add operation transform to recovery queue since it is recovering
+					recovery_q.put([document_id, parent_version, op, request_id])
+
+					# try:
+					# 	doc.content = op(doc.content)
+					# except Exception as e:
+					# 	print(e)
+					# 	return HttpResponseBadRequest("Unable to apply change in secondary database")
+					
+					# next_version = doc.version + 1
+					# c = DocumentChange(
+					# 	document=doc,
+					# 	version=next_version,
+					# 	request_id=request_id,
+					# 	parent_version=parent_version,
+					# 	data=json.dumps(op.ops))
+					# c.save()
+					# doc.version = next_version
+					# doc.save()
+			return JsonResponse({'ok':'ok'})
+
+
 """
 1. URL for getting only the change
 2. just apply the change and save the changed document
@@ -422,13 +480,67 @@ def recover():
 			response = requests.post(url, data = payload)
 			resp_content = json.loads(response.text)
 
-			opdata = json.loads(resp_content['data'])
-			op = TextOperation(opdata)
-			request_id = resp_content['request-id']
-			parent_version = int(resp_content['parent-version'])
-			# doc = _doc_get_or_create(DOC_ID)
+			# opdata = json.loads(resp_content['data'])
+			# op = TextOperation(opdata)
+			# request_id = resp_content['request-id']
+			# parent_version = int(resp_content['parent-version'])
+
+			changes = json.loads(resp_content['data']) # Is this the right syntax
+
+			doc = _doc_get_or_create(DOC_ID)
+
 			with transaction.atomic():
 				doc = Document.objects.select_for_update().get(id=doc.id)
+				for chng in changes:
+					opdata = chng.data
+					op  = TextOperation(opdata)
+					parent_version = chng.parent_version
+					request_id = chng.request_id
+
+					try:
+						c = DocumentChange.objects.get(
+							document=doc,
+							request_id=request_id,
+							parent_version=parent_version)
+						print("Document change already exists!")
+					except DocumentChange.DoesNotExist:
+
+
+						try:
+							doc.content = op(doc.content)
+						except Exception as e:
+							print(e)
+							return HttpResponseBadRequest("Unable to apply change in secondary database")
+						
+						next_version = doc.version + 1
+						c = DocumentChange(
+							document=doc,
+							version=next_version,
+							request_id=request_id,
+							parent_version=parent_version,
+							data=json.dumps(op.ops))
+						c.save()
+						doc.version = next_version
+						doc.save()
+		except:
+			print('No Document of ID={} exists'.format(DOC_ID))
+
+
+		# Now all changes are done and recovery is complete
+
+		STATE = 'secondary' #recovery is complete
+
+		#Now need to apply changes of the recovery queue
+
+		while(not recovery_q.empty()):
+			cur_change = recovery_q.get()
+			document_id = cur_change[0]
+			parent_version = cur_change[1]
+			opo = cur_change[2]
+			request_id = cur_change[3]
+
+			with transaction.atomic():
+				doc = Document.objects.select_for_update().get(id=document_id)
 				try:
 					c = DocumentChange.objects.get(
 						document=doc,
@@ -437,6 +549,23 @@ def recover():
 					print("Document change already exists!")
 				except DocumentChange.DoesNotExist:
 
+					## Is it needed?
+					# changes_since = DocumentChange.objects.filter(
+					# 	document=doc,
+					# 	version__gt=parent_version,
+					# 	version__lte=doc.version).order_by('version')
+
+					# for c in changes_since:
+					# 	op2 = TextOperation(json.loads(c.data))
+					# 	try:
+					# 		op, _ = TextOperation.transform(op, op2)
+					# 	except Exception as e:
+					# 		print(e)
+					# 		return HttpResponseBadRequest(
+					# 			'unable to transform against version {}'.format(c.version))
+
+
+					#Operation trsansform
 					try:
 						doc.content = op(doc.content)
 					except Exception as e:
@@ -453,8 +582,12 @@ def recover():
 					c.save()
 					doc.version = next_version
 					doc.save()
-		except:
-			print('No Document of ID={} exists'.format(DOC_ID))
+
+
+
+
+
+
 
 """
 1. Run the above function in a separate thread
@@ -482,9 +615,25 @@ def recovery_module(request, document_id=None):
 				return HttpResponseBadRequest('No Document of the given ID')
 
 			# TODO: Is it Correct?
-			doc_change = DocumentChange.objects.get(document=doc, version=version) 
+			changes = DocumentChange.objects.filter(
+						document=doc,
+						version__gt= version).order_by('version')[:50]
 
-			payload = {'request_id' : doc_change.request_id, 'parent_version': doc_change.parent_version, 'data': doc_change.data}
+			# changes_since = DocumentChange.objects.filter(
+			# 			document=doc,
+			# 			version__gt=parent_version,
+			# 			version__lte=doc.version).order_by('version')
+			# for c in changes_since:
+			# 			op2 = TextOperation(json.loads(c.data))
+			# 			try:
+			# 				op, _ = TextOperation.transform(op, op2)
+			# 			except:
+			# 				return HttpResponseBadRequest(
+			# 					'unable to transform against version {}'.format(c.version))
+					
+			# \doc_change = DocumentChange.objects.get(document=doc, version=version) 
+
+			payload = {'data': changes}
 			return JSONResponse(payload)
 
 		return HttpResponseNotFound('Not a POST request')
@@ -513,6 +662,7 @@ def become_secondary(request):
 	global STATE
 	if STATE == 'primary':
 		STATE = 'secondary'
+
 	return JsonResponse({'ok':'ok'})
 
 

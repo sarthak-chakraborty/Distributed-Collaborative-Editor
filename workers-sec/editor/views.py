@@ -37,7 +37,7 @@ HB_TIMES = [								# Time when last heartbeat received from replica.
 	# time.time()	# Add this if we need 3 servers
 ]
 
-recovery_q = Queue(maxsize=0) 	
+recovery_q = Queue.Queue(maxsize=0) 	
 
 def heartbeat_sender():
 	if STATE in ['primary','secondary']:
