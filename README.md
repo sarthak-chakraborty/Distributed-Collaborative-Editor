@@ -1,24 +1,42 @@
-# Editor
+# Distributed Collaborative Editor
 
-Collaborative editor using operational transformations.
+This is term project for the course Distributed Systems(CS60002) [IIT Kgp]. Contributors for this project are:
 
-OT algorithms and code based on [Tim Baumann's project](https://github.com/Operational-Transformation).
+- ![Sarthak Chakraborty](https://github.com/sarthak-chakraborty)
+- ![Sai Saketh Aluru](https://github.com/SaiSakethAluru)
+- ![Nikhil Nayan Jha](https://github.com/nnjha98)
+- ![Omar Eqbal](https://github.com/omareqbal)
+- ![Aditya Anand](https://github.com/adiabhi1998)
 
-Client textarea uses CodeMirror.
 
-Server is a Django app. Updates are sent over Fanout Cloud or Pushpin.
+### Basic Information
 
-There is a public instance available here: [http://editor.fanoutapp.com](http://editor.fanoutapp.com).
+This is a Collaborative editor that uses Operational Transformations to maintain consistency in the documents at server and client side. OT algorithms and its code is based on [Tim Baumann's project](https://github.com/Operational-Transformation).
+
+Our system has a single `MASTER` server, and 2 worker servers, among which one will act as a `PRIMARY` while the others act as a `SECONDARY`.
+
+Django app has been used for all the SERVERS while CLIENT text area is written in javascript and uses CodeMirror. Updates can be sent over Fanout Cloud to get real-time streaming guarantees.
+
+We have implemented a basic collaborative editor that can handle multiple documents, supports a `single` crash fault, along with recovery mechanism. The replication strategy that we have used is Passive Replication.
+
 
 ## Usage
 
-Install dependencies and setup database for editor server:
+Install dependencies and setup database for all the servers:
 
 ```sh
 virtualenv venv
 . venv/bin/activate
+cd master
 pip install -r requirements.txt
 python manage.py migrate
+
+cd ../worker-primary
+python manage.py migrate
+
+cd ../worker-secondary
+python manage.py migrate
+cd ..
 ```
 
 Note: default storage is sqlite.
@@ -33,7 +51,7 @@ cd ..
 
 ### Running with Fanout Cloud
 
-Create a `.env` file containing `GRIP_URL`:
+Create a `.env` file in each of the directories(`master` / `worker-primary` / `worker-secondary` ) containing `GRIP_URL`:
 
 ```sh
 GRIP_URL=https://api.fanout.io/realm/{realm-id}?iss={realm-id}&key=base64:{realm-key}
@@ -47,34 +65,28 @@ In a separate shell, run proxy server for local tunneling:
 node proxy-server/proxy.js
 ```
 
-In the Fanout control panel, set the ngrok host/port as the Origin Server.
+In the Fanout control panel, set the public IP of the running system `<host>:<port>` as the Origin Server. (Since the proxy server is running at `PORT=8000`, `<port>` at the Fanout control panel will be `8000` as well)
 
-Run a local instance of the project:
+Now run a local instance of all the servers in separate shell
 
 ```sh
+cd master/
 python manage.py runserver 127.0.0.1:8001
 ```
 
-Then open up two browser windows to your Fanout Cloud domain (e.g. https://{realm-id}.fanoutcdn.com/). Requests made to Fanout Cloud should be routed through ngrok to the local instance.
-
-### Running with Pushpin
-
-Create a `.env` file containing `GRIP_URL`:
-
 ```sh
-GRIP_URL=http://localhost:5561
+cd worker-primary/
+python manage.py runserver 127.0.0.1:8002
 ```
 
-Run Pushpin:
-
 ```sh
-pushpin --route="* localhost:8000"
+cd worker-secondary/
+python manage.py runserver 127.0.0.1:8003
 ```
 
-Run the server:
+Then open up two browser windows to your Fanout Cloud domain (e.g. `http://{realm-id}.fanoutcdn.com/`). Requests made to Fanout Cloud should be routed through the procy server to the local instances of the server running. New document can be created by going to the URL `http://{realm-id}.fanoutcdn.com/{new-document-ID}`
 
-```sh
-python manage.py runserver
-```
 
-Then open up two browser windows to [http://localhost:7999/](http://localhost:7999/).
+### Recovery Handling
+
+For recovery handling, the local instance running as the `PRIMARY` server (S1) can be stopped(representing as a crash fault) and can then be restarted again(at the same port). It can be seen that S1 recovers with the updates that had been applied while it was down becomes a secondary server. Consistency checks can be done by crashing the current primary server (not S1), which will lead S1 to be primary.
